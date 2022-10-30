@@ -5,13 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/viper"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -52,143 +51,164 @@ func createApiApi(apiName string) {
 }
 
 func queryApi(w http.ResponseWriter, r *http.Request) {
+
 	w.Header().Set("Content-Type", "application/json")
 	apiName := r.URL
 	logger.LogMsg(fmt.Sprintf("Call %s", r.URL), "info")
 
-	apiSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
-	apiTargetMethod := viper.GetString(fmt.Sprintf("api.%s.target_method", apiName))
-	apiTargetUrl := viper.GetString(fmt.Sprintf("sources.%s.url", apiSource))
+	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
 
-	var response *http.Response
-	var err error
+		var response *http.Response
+		var err error
 
-	switch apiTargetMethod {
-	case "get":
-		response, err = http.Get(apiTargetUrl)
-	//case "post":
-	//	response, err = http.Post(apiTargetUrl)
-	default:
-		logger.LogMsg(
-			fmt.Sprintf("Sorry but the http method %s is not recognised", apiTargetMethod),
-			"critical",
-		)
+		apiSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
+		apiTargetMethod := viper.GetString(fmt.Sprintf("api.%s.target_method", apiName))
+		apiTargetUrl := viper.GetString(fmt.Sprintf("sources.%s.url", apiSource))
+
+		switch apiTargetMethod {
+		case "get":
+			response, err = http.Get(apiTargetUrl)
+		//case "post":
+		//	response, err = http.Post(apiTargetUrl)
+		default:
+			logger.LogMsg(
+				fmt.Sprintf("Sorry but the http call %s is not recognized", apiTargetMethod),
+				"critical",
+			)
+
+		}
+
+		checkErr(err)
+
+		_, err = io.Copy(w, response.Body)
+		checkErr(err)
+
+		// Add an CR at the end of the json stream
+		endResponse := strings.NewReader("\n")
+		_, err = io.Copy(w, endResponse)
+		checkErr(err)
+		httpClose(response.Body)
+
+	} else {
+
+		endResponse := strings.NewReader(fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}", apiName))
+		_, err := io.Copy(w, endResponse)
+		checkErr(err)
+		logger.LogMsg(fmt.Sprintf("Sorry the call %s was undefined", apiName), "info")
 
 	}
-
-	if err != nil {
-		fmt.Print(err.Error())
-		os.Exit(1)
-	}
-
-	//response.Body += "\n"
-	end_response := strings.NewReader("\n")
-	_, err = io.Copy(w, response.Body)
-	checkErr(err)
-	_, err = io.Copy(w, end_response)
-	checkErr(err)
-	httpClose(response.Body)
 
 }
 
 func querySql(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	apiName := r.URL
-	logger.LogMsg(fmt.Sprintf("Call %s", r.URL), "info")
+	logger.LogMsg(fmt.Sprintf("Call %s", apiName), "info")
 
-	dbQuery := viper.GetString(fmt.Sprintf("api.%s.query", apiName))
-	dbSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
-	dbName := viper.GetString(fmt.Sprintf("sources.%s.dbname", dbSource))
-	dbDriver := viper.GetString(fmt.Sprintf("sources.%s.engine", dbSource))
+	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
 
-	var db *sql.DB
-	var err error
-	var sqlData sqlData
-	var rowCount int64
+		dbQuery := viper.GetString(fmt.Sprintf("api.%s.query", apiName))
+		dbSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
+		dbName := viper.GetString(fmt.Sprintf("sources.%s.dbname", dbSource))
+		dbDriver := viper.GetString(fmt.Sprintf("sources.%s.engine", dbSource))
 
-	if dbDriver == "sqlite" {
-		db, err = sql.Open("sqlite3", dbName)
-		checkErr(err)
-		logger.LogMsg(fmt.Sprintf("Open sqlite db %s", dbName), "info")
-	}
+		var db *sql.DB
+		var err error
+		var sqlData sqlData
+		var rowCount int64
 
-	rows, err := db.Query(dbQuery)
-	checkErr(err)
-	logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
-
-	columnTypes, err := rows.ColumnTypes()
-	checkErr(err)
-
-	colCount := len(columnTypes)
-	rowCount = 0
-
-	for rows.Next() {
-
-		scanArgs := make([]interface{}, colCount)
-
-		for i, v := range columnTypes {
-
-			switch v.DatabaseTypeName() {
-			case "VARCHAR", "TEXT", "UUID", "TIMESTAMP":
-				scanArgs[i] = new(sql.NullString)
-				break
-			case "BOOL":
-				scanArgs[i] = new(sql.NullBool)
-				break
-			case "INT4", "INTEGER", "numeric":
-				scanArgs[i] = new(sql.NullInt64)
-				break
-			default:
-				scanArgs[i] = new(sql.NullString)
-			}
+		if dbDriver == "sqlite" {
+			db, err = sql.Open("sqlite3", dbName)
+			checkErr(err)
+			logger.LogMsg(fmt.Sprintf("Open sqlite db %s", dbName), "info")
 		}
 
-		err := rows.Scan(scanArgs...)
+		rows, err := db.Query(dbQuery)
+		checkErr(err)
+		logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
+
+		columnTypes, err := rows.ColumnTypes()
 		checkErr(err)
 
-		masterData := map[string]interface{}{}
+		colCount := len(columnTypes)
+		rowCount = 0
 
-		for i, v := range columnTypes {
+		for rows.Next() {
 
-			if z, ok := (scanArgs[i]).(*sql.NullBool); ok {
-				masterData[v.Name()] = z.Bool
-				continue
+			scanArgs := make([]interface{}, colCount)
+
+			for i, v := range columnTypes {
+
+				switch v.DatabaseTypeName() {
+				case "VARCHAR", "TEXT", "UUID", "TIMESTAMP":
+					scanArgs[i] = new(sql.NullString)
+					break
+				case "BOOL":
+					scanArgs[i] = new(sql.NullBool)
+					break
+				case "INT4", "INTEGER", "numeric":
+					scanArgs[i] = new(sql.NullInt64)
+					break
+				default:
+					scanArgs[i] = new(sql.NullString)
+				}
 			}
 
-			if z, ok := (scanArgs[i]).(*sql.NullString); ok {
-				masterData[v.Name()] = z.String
-				continue
+			err := rows.Scan(scanArgs...)
+			checkErr(err)
+
+			masterData := map[string]interface{}{}
+
+			for i, v := range columnTypes {
+
+				if z, ok := (scanArgs[i]).(*sql.NullBool); ok {
+					masterData[v.Name()] = z.Bool
+					continue
+				}
+
+				if z, ok := (scanArgs[i]).(*sql.NullString); ok {
+					masterData[v.Name()] = z.String
+					continue
+				}
+
+				if z, ok := (scanArgs[i]).(*sql.NullInt64); ok {
+					masterData[v.Name()] = z.Int64
+					continue
+				}
+
+				if z, ok := (scanArgs[i]).(*sql.NullFloat64); ok {
+					masterData[v.Name()] = z.Float64
+					continue
+				}
+
+				if z, ok := (scanArgs[i]).(*sql.NullInt32); ok {
+					masterData[v.Name()] = z.Int32
+					continue
+				}
+
+				masterData[v.Name()] = scanArgs[i]
 			}
 
-			if z, ok := (scanArgs[i]).(*sql.NullInt64); ok {
-				masterData[v.Name()] = z.Int64
-				continue
-			}
-
-			if z, ok := (scanArgs[i]).(*sql.NullFloat64); ok {
-				masterData[v.Name()] = z.Float64
-				continue
-			}
-
-			if z, ok := (scanArgs[i]).(*sql.NullInt32); ok {
-				masterData[v.Name()] = z.Int32
-				continue
-			}
-
-			masterData[v.Name()] = scanArgs[i]
+			sqlData.Data = append(sqlData.Data, masterData)
+			rowCount += 1
 		}
 
-		sqlData.Data = append(sqlData.Data, masterData)
-		rowCount += 1
+		logger.LogMsg(fmt.Sprintf("found : %d records", rowCount), "info")
+		sqlData.ReturnedRows = rowCount
+
+		err = rows.Close()
+		checkErr(err)
+		err = json.NewEncoder(w).Encode(sqlData)
+		checkErr(err)
+	} else {
+
+		endResponse := strings.NewReader(fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}", apiName))
+		_, err := io.Copy(w, endResponse)
+		checkErr(err)
+		logger.LogMsg(fmt.Sprintf("Sorry the call %s was undefined", apiName), "info")
+
 	}
 
-	logger.LogMsg(fmt.Sprintf("found : %d records", rowCount), "info")
-	sqlData.ReturnedRows = rowCount
-
-	err = rows.Close()
-	checkErr(err)
-	err = json.NewEncoder(w).Encode(sqlData)
-	checkErr(err)
 }
 
 func checkErr(err error) {
@@ -198,19 +218,7 @@ func checkErr(err error) {
 	}
 }
 
-func HandleRequests() {
-
-	// create a serve mux
-	//sm = mux.NewRouter()
-	sm.StrictSlash(true)
-	//myRouter := mux.NewRouter().StrictSlash(true)
-
-	// register handlers
-	//postR := sm.Methods(http.MethodPost).Subrouter()
-	//getR = sm.Methods(http.MethodGet).Subrouter()
-	//putR := sm.Methods(http.MethodPut).Subrouter()
-	//deleteR := sm.Methods(http.MethodDelete).Subrouter()
-
+func createEndpoints() {
 	listApiDescriptors := viper.GetStringMap("api")
 	for apiDescriptor := range listApiDescriptors {
 
@@ -229,6 +237,29 @@ func HandleRequests() {
 		}
 
 	}
+}
+
+func HandleRequests() {
+
+	var err error
+
+	// create a serve mux
+	//sm = mux.NewRouter()
+	sm.StrictSlash(true)
+	//myRouter := mux.NewRouter().StrictSlash(true)
+
+	// register handlers
+	//postR := sm.Methods(http.MethodPost).Subrouter()
+	//getR = sm.Methods(http.MethodGet).Subrouter()
+	//putR := sm.Methods(http.MethodPut).Subrouter()
+	//deleteR := sm.Methods(http.MethodDelete).Subrouter()
+
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		logger.LogMsg(fmt.Sprintf("Config file changed: %s", e.Name), "info")
+		createEndpoints()
+	})
+	viper.WatchConfig()
+	createEndpoints()
 
 	// Define GET Call
 	//getR.HandleFunc("/users", users.AllUsers)
@@ -249,5 +280,7 @@ func HandleRequests() {
 	//refToken.HandleFunc("", uh.RefreshToken)
 	//refToken.Use(uh.MiddlewareValidateRefreshToken)
 
-	log.Fatal(http.ListenAndServe(":8081", sm))
+	err = http.ListenAndServe(":8081", sm)
+	checkErr(err)
+
 }
