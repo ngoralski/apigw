@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 var sm = mux.NewRouter()
@@ -20,6 +21,11 @@ var getR = sm.Methods(http.MethodGet).Subrouter()
 type sqlData struct {
 	ReturnedRows int64         `json:"ReturnedRows"`
 	Data         []interface{} `json:"Data"`
+}
+
+func httpClose(c io.Closer) {
+	err := c.Close()
+	checkErr(err)
 }
 
 func createApiSql(apiName string) {
@@ -75,9 +81,13 @@ func queryApi(w http.ResponseWriter, r *http.Request) {
 		os.Exit(1)
 	}
 
+	//response.Body += "\n"
+	end_response := strings.NewReader("\n")
 	_, err = io.Copy(w, response.Body)
 	checkErr(err)
-	response.Body.Close()
+	_, err = io.Copy(w, end_response)
+	checkErr(err)
+	httpClose(response.Body)
 
 }
 
@@ -125,7 +135,7 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 			case "BOOL":
 				scanArgs[i] = new(sql.NullBool)
 				break
-			case "INT4":
+			case "INT4", "INTEGER", "numeric":
 				scanArgs[i] = new(sql.NullInt64)
 				break
 			default:
@@ -175,9 +185,10 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 	logger.LogMsg(fmt.Sprintf("found : %d records", rowCount), "info")
 	sqlData.ReturnedRows = rowCount
 
-	rows.Close()
-	json.NewEncoder(w).Encode(sqlData)
-
+	err = rows.Close()
+	checkErr(err)
+	err = json.NewEncoder(w).Encode(sqlData)
+	checkErr(err)
 }
 
 func checkErr(err error) {
@@ -201,7 +212,7 @@ func HandleRequests() {
 	//deleteR := sm.Methods(http.MethodDelete).Subrouter()
 
 	listApiDescriptors := viper.GetStringMap("api")
-	for apiDescriptor, _ := range listApiDescriptors {
+	for apiDescriptor := range listApiDescriptors {
 
 		logger.LogMsg(fmt.Sprintf("Info %s", apiDescriptor), "info")
 
@@ -239,12 +250,4 @@ func HandleRequests() {
 	//refToken.Use(uh.MiddlewareValidateRefreshToken)
 
 	log.Fatal(http.ListenAndServe(":8081", sm))
-}
-
-func deleteUser(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Delete User Endpoint Hit")
-}
-
-func updateUser(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Update User Endpoint Hit")
 }
