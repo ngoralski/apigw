@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/fsnotify/fsnotify"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/viper"
 	"io"
@@ -49,26 +51,81 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 		dbQuery := viper.GetString(fmt.Sprintf("api.%s.query", apiName))
 		dbSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
 		dbName := viper.GetString(fmt.Sprintf("sources.%s.dbname", dbSource))
+		dbUsername := viper.GetString(fmt.Sprintf("sources.%s.username", dbSource))
+		dbPassword := viper.GetString(fmt.Sprintf("sources.%s.password", dbSource))
+		dbHost := viper.GetString(fmt.Sprintf("sources.%s.host", dbSource))
+		dbPort := viper.GetInt(fmt.Sprintf("sources.%s.port", dbSource))
 		dbDriver := viper.GetString(fmt.Sprintf("sources.%s.engine", dbSource))
 
 		var db *sql.DB
 		var err error
 		var sqlData sqlData
 		var rowCount int64
-		var db_connect bool
+		var dbConnect bool
+		var endResponse *strings.Reader
 
-		switch dbDriver {
+		switch strings.ToLower(dbDriver) {
 		case "sqlite":
 			db, err = sql.Open("sqlite3", dbName)
 			checkErr(err)
 			logger.LogMsg(fmt.Sprintf("Open sqlite db %s", dbName), "info")
-			db_connect = true
+			dbConnect = true
+		case "mysql":
+			dbCnxString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", dbUsername, dbPassword, dbHost, dbPort, dbName)
+			db, err = sql.Open("mysql", dbCnxString)
+			checkErr(err)
+
+			if err != nil {
+				logger.LogMsg(fmt.Sprintf("Can't open mysql db %s", dbName), "info")
+				dbConnect = false
+				endResponse = strings.NewReader(
+					fmt.Sprintf("{\"error\" : \"Sorry the call %s is unable to join the target endpoint, "+
+						"please contact an administrator\"}\n",
+						apiName,
+					),
+				)
+			} else {
+				logger.LogMsg(fmt.Sprintf("Open mysql db %s", dbName), "info")
+				dbConnect = true
+			}
+
+		case "postgres":
+			dbCnxString := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", dbUsername, dbPassword, dbHost, dbPort, dbName)
+			db, err = sql.Open("postgres", dbCnxString)
+			checkErr(err)
+
+			if err != nil {
+				logger.LogMsg(fmt.Sprintf("Can't open postgres db %s", dbName), "info")
+				dbConnect = false
+				endResponse = strings.NewReader(
+					fmt.Sprintf("{\"error\" : \"Sorry the call %s is unable to join the target endpoint, "+
+						"please contact an administrator\"}\n",
+						apiName,
+					),
+				)
+			} else {
+				logger.LogMsg(fmt.Sprintf("Open postgres db %s", dbName), "info")
+				dbConnect = true
+			}
 
 		default:
+			dbConnect = false
+			logger.LogMsg(
+				fmt.Sprintf(
+					"Sorry the call %s is misconfigured sql driver %s is not supported, ",
+					apiName, dbDriver,
+				),
+				"info",
+			)
+			endResponse = strings.NewReader(
+				fmt.Sprintf("{\"error\" : \"Sorry the call %s was misconfigured contact the administrator\"}\n",
+					apiName,
+				),
+			)
 
 		}
 
-		if db_connect {
+		if dbConnect {
 			rows, err := db.Query(dbQuery)
 			checkErr(err)
 			logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
@@ -142,25 +199,15 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 			logger.LogMsg(fmt.Sprintf("found : %d records", rowCount), "info")
 			sqlData.ReturnedRows = rowCount
 
-			err = rows.Close()
-			checkErr(err)
-			err = json.NewEncoder(w).Encode(sqlData)
-			checkErr(err)
+			checkErr(rows.Close())
+			checkErr(json.NewEncoder(w).Encode(sqlData))
+			checkErr(db.Close())
+
 		} else {
-			endResponse := strings.NewReader(
-				fmt.Sprintf("{\"error\" : \"Sorry the call %s was misconfigured contact the administrator\"}\n",
-					apiName,
-				),
-			)
+
 			_, err := io.Copy(w, endResponse)
 			checkErr(err)
-			logger.LogMsg(
-				fmt.Sprintf(
-					"Sorry the call %s is misconfigured sql driver %s is not supported, ",
-					apiName, dbDriver,
-				),
-				"info",
-			)
+
 		}
 
 	} else {
