@@ -356,7 +356,9 @@ func HandleRequests() {
 	//refToken.HandleFunc("", uh.RefreshToken)
 	//refToken.Use(uh.MiddlewareValidateRefreshToken)
 
-	err = http.ListenAndServe(":8081", sm)
+	listeningPort := viper.GetString("listening_port")
+
+	err = http.ListenAndServe(":"+listeningPort, sm)
 	checkErr(err)
 
 }
