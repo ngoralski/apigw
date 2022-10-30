@@ -1,0 +1,45 @@
+{
+  "threads": 1,
+  "log_level": "debug",
+  "log_output": "stdout",
+
+  "sources": {
+    "gorm": {
+      "dbname": "gorm.db",
+      "engine": "sqlite"
+    },
+    "mysql": {
+      "dbname": "test",
+      "engine": "mysql",
+      "host": "localhost",
+      "port": "3306",
+      "username": "test",
+      "password": "test"
+    },
+    "catfact": {
+      "url": "https://catfact.ninja/fact"
+    }
+  },
+
+  "api": {
+    "/test/api": {
+      "type": "api",
+      "source": "catfact",
+      "method": "get",
+      "target_method": "get"
+    },
+    "/users": {
+      "type": "sql",
+      "source": "gorm",
+      "method": "get",
+      "query": "select * from users"
+    },
+    "/hosts": {
+      "type": "sql",
+      "source": "gorm",
+      "method": "get",
+      "query": "select * from hosts"
+    }
+  }
+
+}
