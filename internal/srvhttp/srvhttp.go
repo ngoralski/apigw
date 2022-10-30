@@ -38,6 +38,144 @@ func createApiSql(apiName string) {
 	}
 
 }
+
+func querySql(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	apiName := r.URL
+	logger.LogMsg(fmt.Sprintf("Call %s", apiName), "info")
+
+	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
+
+		dbQuery := viper.GetString(fmt.Sprintf("api.%s.query", apiName))
+		dbSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
+		dbName := viper.GetString(fmt.Sprintf("sources.%s.dbname", dbSource))
+		dbDriver := viper.GetString(fmt.Sprintf("sources.%s.engine", dbSource))
+
+		var db *sql.DB
+		var err error
+		var sqlData sqlData
+		var rowCount int64
+		var db_connect bool
+
+		switch dbDriver {
+		case "sqlite":
+			db, err = sql.Open("sqlite3", dbName)
+			checkErr(err)
+			logger.LogMsg(fmt.Sprintf("Open sqlite db %s", dbName), "info")
+			db_connect = true
+
+		default:
+
+		}
+
+		if db_connect {
+			rows, err := db.Query(dbQuery)
+			checkErr(err)
+			logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
+
+			columnTypes, err := rows.ColumnTypes()
+			checkErr(err)
+
+			colCount := len(columnTypes)
+			rowCount = 0
+
+			for rows.Next() {
+
+				scanArgs := make([]interface{}, colCount)
+
+				for i, v := range columnTypes {
+
+					switch v.DatabaseTypeName() {
+					case "VARCHAR", "TEXT", "UUID", "TIMESTAMP":
+						scanArgs[i] = new(sql.NullString)
+						break
+					case "BOOL":
+						scanArgs[i] = new(sql.NullBool)
+						break
+					case "INT4", "INTEGER", "numeric":
+						scanArgs[i] = new(sql.NullInt64)
+						break
+					default:
+						scanArgs[i] = new(sql.NullString)
+					}
+				}
+
+				err := rows.Scan(scanArgs...)
+				checkErr(err)
+
+				masterData := map[string]interface{}{}
+
+				for i, v := range columnTypes {
+
+					if z, ok := (scanArgs[i]).(*sql.NullBool); ok {
+						masterData[v.Name()] = z.Bool
+						continue
+					}
+
+					if z, ok := (scanArgs[i]).(*sql.NullString); ok {
+						masterData[v.Name()] = z.String
+						continue
+					}
+
+					if z, ok := (scanArgs[i]).(*sql.NullInt64); ok {
+						masterData[v.Name()] = z.Int64
+						continue
+					}
+
+					if z, ok := (scanArgs[i]).(*sql.NullFloat64); ok {
+						masterData[v.Name()] = z.Float64
+						continue
+					}
+
+					if z, ok := (scanArgs[i]).(*sql.NullInt32); ok {
+						masterData[v.Name()] = z.Int32
+						continue
+					}
+
+					masterData[v.Name()] = scanArgs[i]
+				}
+
+				sqlData.Data = append(sqlData.Data, masterData)
+				rowCount += 1
+			}
+
+			logger.LogMsg(fmt.Sprintf("found : %d records", rowCount), "info")
+			sqlData.ReturnedRows = rowCount
+
+			err = rows.Close()
+			checkErr(err)
+			err = json.NewEncoder(w).Encode(sqlData)
+			checkErr(err)
+		} else {
+			endResponse := strings.NewReader(
+				fmt.Sprintf("{\"error\" : \"Sorry the call %s was misconfigured contact the administrator\"}\n",
+					apiName,
+				),
+			)
+			_, err := io.Copy(w, endResponse)
+			checkErr(err)
+			logger.LogMsg(
+				fmt.Sprintf(
+					"Sorry the call %s is misconfigured sql driver %s is not supported, ",
+					apiName, dbDriver,
+				),
+				"info",
+			)
+		}
+
+	} else {
+
+		endResponse := strings.NewReader(
+			fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}\n", apiName),
+		)
+		_, err := io.Copy(w, endResponse)
+		checkErr(err)
+		logger.LogMsg(fmt.Sprintf("Sorry the call %s was undefined", apiName), "info")
+
+	}
+
+}
+
 func createApiApi(apiName string) {
 	logger.LogMsg(fmt.Sprintf("Requested api endpoint : %s", apiName), "info")
 
@@ -91,118 +229,9 @@ func queryApi(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 
-		endResponse := strings.NewReader(fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}", apiName))
-		_, err := io.Copy(w, endResponse)
-		checkErr(err)
-		logger.LogMsg(fmt.Sprintf("Sorry the call %s was undefined", apiName), "info")
-
-	}
-
-}
-
-func querySql(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	apiName := r.URL
-	logger.LogMsg(fmt.Sprintf("Call %s", apiName), "info")
-
-	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
-
-		dbQuery := viper.GetString(fmt.Sprintf("api.%s.query", apiName))
-		dbSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
-		dbName := viper.GetString(fmt.Sprintf("sources.%s.dbname", dbSource))
-		dbDriver := viper.GetString(fmt.Sprintf("sources.%s.engine", dbSource))
-
-		var db *sql.DB
-		var err error
-		var sqlData sqlData
-		var rowCount int64
-
-		if dbDriver == "sqlite" {
-			db, err = sql.Open("sqlite3", dbName)
-			checkErr(err)
-			logger.LogMsg(fmt.Sprintf("Open sqlite db %s", dbName), "info")
-		}
-
-		rows, err := db.Query(dbQuery)
-		checkErr(err)
-		logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
-
-		columnTypes, err := rows.ColumnTypes()
-		checkErr(err)
-
-		colCount := len(columnTypes)
-		rowCount = 0
-
-		for rows.Next() {
-
-			scanArgs := make([]interface{}, colCount)
-
-			for i, v := range columnTypes {
-
-				switch v.DatabaseTypeName() {
-				case "VARCHAR", "TEXT", "UUID", "TIMESTAMP":
-					scanArgs[i] = new(sql.NullString)
-					break
-				case "BOOL":
-					scanArgs[i] = new(sql.NullBool)
-					break
-				case "INT4", "INTEGER", "numeric":
-					scanArgs[i] = new(sql.NullInt64)
-					break
-				default:
-					scanArgs[i] = new(sql.NullString)
-				}
-			}
-
-			err := rows.Scan(scanArgs...)
-			checkErr(err)
-
-			masterData := map[string]interface{}{}
-
-			for i, v := range columnTypes {
-
-				if z, ok := (scanArgs[i]).(*sql.NullBool); ok {
-					masterData[v.Name()] = z.Bool
-					continue
-				}
-
-				if z, ok := (scanArgs[i]).(*sql.NullString); ok {
-					masterData[v.Name()] = z.String
-					continue
-				}
-
-				if z, ok := (scanArgs[i]).(*sql.NullInt64); ok {
-					masterData[v.Name()] = z.Int64
-					continue
-				}
-
-				if z, ok := (scanArgs[i]).(*sql.NullFloat64); ok {
-					masterData[v.Name()] = z.Float64
-					continue
-				}
-
-				if z, ok := (scanArgs[i]).(*sql.NullInt32); ok {
-					masterData[v.Name()] = z.Int32
-					continue
-				}
-
-				masterData[v.Name()] = scanArgs[i]
-			}
-
-			sqlData.Data = append(sqlData.Data, masterData)
-			rowCount += 1
-		}
-
-		logger.LogMsg(fmt.Sprintf("found : %d records", rowCount), "info")
-		sqlData.ReturnedRows = rowCount
-
-		err = rows.Close()
-		checkErr(err)
-		err = json.NewEncoder(w).Encode(sqlData)
-		checkErr(err)
-	} else {
-
-		endResponse := strings.NewReader(fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}", apiName))
+		endResponse := strings.NewReader(
+			fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}\n", apiName),
+		)
 		_, err := io.Copy(w, endResponse)
 		checkErr(err)
 		logger.LogMsg(fmt.Sprintf("Sorry the call %s was undefined", apiName), "info")
