@@ -2,6 +2,7 @@
   "threads": 1,
   "log_level": "debug",
   "log_output": "stdout",
+  "listening_port": 8081,
 
   "sources": {
     "gorm": {

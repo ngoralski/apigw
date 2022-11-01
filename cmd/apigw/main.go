@@ -1,9 +1,12 @@
 package main
 
 import (
+	_ "apigw/internal/globalvar"
 	"apigw/internal/logger"
 	"apigw/internal/srvhttp"
+	"fmt"
 	"github.com/spf13/viper"
+	"os"
 )
 
 func main() {
@@ -13,7 +16,15 @@ func main() {
 	viper.AddConfigPath("/usr/local/etc/apigw/")
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
-	viper.ReadInConfig()
+	err := viper.ReadInConfig()
+	if err != nil {
+		fmt.Println("Sorry no configuration file were found in one of the following directory : " +
+			" - ./config" +
+			" - /etc/apigw" +
+			" - /usr/local/etc/apigw",
+		)
+		os.Exit(1)
+	}
 	logger.InitLog()
 
 	logger.LogMsg("Starting process", "info")
