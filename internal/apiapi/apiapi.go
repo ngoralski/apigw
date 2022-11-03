@@ -3,12 +3,20 @@ package apiapi
 import (
 	"apigw/internal/globalvar"
 	"apigw/internal/logger"
+	"encoding/json"
 	"fmt"
 	"github.com/spf13/viper"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 )
+
+type apiData struct {
+	Message string        `json:"Message"`
+	Data    []interface{} `json:"Data"`
+}
 
 func httpClose(c io.Closer) {
 	err := c.Close()
@@ -29,8 +37,9 @@ func CreateApiApi(apiName string) {
 
 func queryApi(w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Content-Type", "application/json")
 	apiName := r.URL
+	var apiData apiData
+
 	logger.LogMsg(fmt.Sprintf("Call %s", r.URL), "info")
 
 	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
@@ -38,13 +47,33 @@ func queryApi(w http.ResponseWriter, r *http.Request) {
 		var response *http.Response
 		var err error
 
+		var timeout time.Duration
+		timeout = time.Duration(viper.GetInt("http_client_timeout")) * time.Second
+
 		apiSource := viper.GetString(fmt.Sprintf("api.%s.source", apiName))
 		apiTargetMethod := viper.GetString(fmt.Sprintf("api.%s.target_method", apiName))
 		apiTargetUrl := viper.GetString(fmt.Sprintf("sources.%s.url", apiSource))
+		apiExpectedStatusCode := viper.GetInt(fmt.Sprintf("sources.%s.expected_status_code", apiSource))
+
+		if viper.IsSet(fmt.Sprintf("sources.%s.http_client_timeout", apiSource)) {
+			timeout = time.Duration(
+				viper.GetInt(fmt.Sprintf("sources.%s.http_client_timeout", apiSource)),
+			) * time.Second
+		}
+
+		tr := &http.Transport{
+			MaxIdleConns: 10,
+			//IdleConnTimeout:    30 * time.Second,
+			ResponseHeaderTimeout: timeout,
+			DisableCompression:    true,
+		}
+		httpClient := &http.Client{Transport: tr}
+		//resp, err := client.Get("https://example.com ")
 
 		switch apiTargetMethod {
 		case "get":
-			response, err = http.Get(apiTargetUrl)
+			response, err = httpClient.Get(apiTargetUrl)
+
 		//case "post":
 		//	response, err = http.Post(apiTargetUrl)
 		default:
@@ -55,16 +84,51 @@ func queryApi(w http.ResponseWriter, r *http.Request) {
 
 		}
 
-		globalvar.CheckErr(err)
+		//logger.LogMsg(fmt.Sprintf("DBG NGO %s", response.Status), "critical")
 
-		_, err = io.Copy(w, response.Body)
-		globalvar.CheckErr(err)
+		if err != nil {
+			switch err := err.(type) {
+			case net.Error:
+				if err.Timeout() {
+					fmt.Println("This was a net.Error with a Timeout")
+					w.WriteHeader(http.StatusGatewayTimeout)
+					apiData.Message = "Sorry but the endpoint did not answer in the expected timeframe"
+					logger.LogMsg("Sorry but the endpoint did not answer in the expected timeframe", "info")
+					globalvar.CheckErr(json.NewEncoder(w).Encode(apiData))
+				}
+			default:
+				globalvar.CheckErr(err)
+				httpClose(response.Body)
 
-		// Add an CR at the end of the json stream
-		endResponse := strings.NewReader("\n")
-		_, err = io.Copy(w, endResponse)
-		globalvar.CheckErr(err)
-		httpClose(response.Body)
+			}
+
+		} else {
+
+			w.Header().Set("Content-Type", "application/json")
+
+			if response.StatusCode == apiExpectedStatusCode {
+				_, err = io.Copy(w, response.Body)
+				globalvar.CheckErr(err)
+
+				// Add an CR at the end of the json stream
+				endResponse := strings.NewReader("\n")
+				_, err = io.Copy(w, endResponse)
+				globalvar.CheckErr(err)
+
+			} else {
+
+				var data map[string]interface{}
+				_ = json.NewDecoder(response.Body).Decode(&data)
+
+				w.WriteHeader(http.StatusExpectationFailed)
+				apiData.Data = append(apiData.Data, data)
+				apiData.Message = "Sorry but the endpoint did not return expected StatusCode"
+				globalvar.CheckErr(json.NewEncoder(w).Encode(apiData))
+
+			}
+			httpClose(response.Body)
+
+		}
 
 	} else {
 
