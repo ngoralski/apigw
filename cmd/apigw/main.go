@@ -9,6 +9,8 @@ import (
 	"os"
 )
 
+var version = "0.3.0"
+
 func main() {
 
 	viper.AddConfigPath("./config/")

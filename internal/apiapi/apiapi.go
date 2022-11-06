@@ -68,7 +68,6 @@ func queryApi(w http.ResponseWriter, r *http.Request) {
 			DisableCompression:    true,
 		}
 		httpClient := &http.Client{Transport: tr}
-		//resp, err := client.Get("https://example.com ")
 
 		switch apiTargetMethod {
 		case "get":
@@ -83,8 +82,6 @@ func queryApi(w http.ResponseWriter, r *http.Request) {
 			)
 
 		}
-
-		//logger.LogMsg(fmt.Sprintf("DBG NGO %s", response.Status), "critical")
 
 		if err != nil {
 			switch err := err.(type) {
