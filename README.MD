@@ -48,12 +48,12 @@ In the future some new sub module will be added like :
 
 ## Create a new api endpoint to reach a third api endpoint
 
-Edit the api json section.
-Create a new json object with the wished endpoint path like **/test/api**
-Define the type as **api**
-Associate a source ie **catfact**
-Define the http method (actually only get is supported) for your api call
-Define the target http method for the target api that will be used as a data source
+Edit the api json section.\
+Create a new json object with the wished endpoint path like **/test/api**\
+Define the type as **api**\
+Associate a source ie **catfact**\
+Define the http method (actually only get is supported) for your api call\
+Define the target http method for the target api that will be used as a data source\
 
 ```
     "/test/api": {
@@ -64,9 +64,9 @@ Define the target http method for the target api that will be used as a data sou
     },
 ```
 
-Then edit the **sources** section
-Add a new object with the same name as your previously defined source ie: **catfact**
-And add the url that will be used as a data source
+Then edit the **sources** section\
+Add a new object with the same name as your previously defined source ie: **catfact**\
+And add the url that will be used as a data source\
 
 ```
     "catfact": {
@@ -76,12 +76,14 @@ And add the url that will be used as a data source
 
 ## Create a new api endpoint to query a database
 
-Edit the api json section.
-Create a new json object with the wished endpoint path like **/users**
-Define the type api as **sql**
-Associate a source ie **mysql**
-Define the http method (actually only get is supported) for your api call.
-Define the sql query that need to be performed. 
+**It's recommended to use a read-only account as sql injection is not yet blocked.**
+
+Edit the api json section.\
+Create a new json object with the wished endpoint path like **/users**\
+Define the type api as **sql**\
+Associate a source ie **mysql**\
+Define the http method (actually only get is supported) for your api call.\
+Define the sql query that need to be performed. \
 
 ```
     "/users": {
@@ -92,9 +94,9 @@ Define the sql query that need to be performed.
     },
 ```
 
-Then edit the **sources** section
-Add a new object with the same name as your previously defined source ie: **mysql**
-And add the url that will be used as a data source
+Then edit the **sources** section\
+Add a new object with the same name as your previously defined source ie: **mysql**\
+And add the url that will be used as a data source\
 
 
 ```
