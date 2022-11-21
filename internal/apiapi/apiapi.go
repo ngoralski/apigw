@@ -47,7 +47,7 @@ func queryApi(w http.ResponseWriter, r *http.Request) {
 		var response *http.Response
 		var err error
 
-		if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
+		if !viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
 
 			endResponse := strings.NewReader(
 				fmt.Sprintf("{\"error\" : \"Sorry the call %s is linked to an unexisting source\"}\n", apiName),
