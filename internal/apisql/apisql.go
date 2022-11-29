@@ -20,6 +20,20 @@ type sqlData struct {
 	Data         []interface{} `json:"Data"`
 }
 
+type Field struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+}
+
+type Filter struct {
+	Condition string  `json:"condition"`
+	Filter    []Field `json:"filter"`
+}
+
+type Fil struct {
+	Name string `json:"name"`
+}
+
 func CreateApiSql(apiName string) {
 	logger.LogMsg(fmt.Sprintf("Requested api endpoint : %s", apiName), "info")
 
@@ -30,12 +44,26 @@ func CreateApiSql(apiName string) {
 		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
 	}
 
+	if apiMethod == "post" {
+		globalvar.PostR.HandleFunc(apiName, querySql)
+		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
+	}
+
 }
 
 func querySql(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	apiName := r.URL
 	logger.LogMsg(fmt.Sprintf("Call %s", apiName), "info")
+
+	decoder := json.NewDecoder(r.Body)
+	var filter Filter
+	// Try to use parameterized queries
+	//var mParam string
+	err := decoder.Decode(&filter)
+	if err != nil {
+		panic(err)
+	}
 
 	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
 
@@ -61,6 +89,7 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 			globalvar.CheckErr(err)
 			logger.LogMsg(fmt.Sprintf("Open sqlite db %s", dbName), "info")
 			dbConnect = true
+
 		case "mysql":
 			dbCnxString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", dbUsername, dbPassword, dbHost, dbPort, dbName)
 			db, err = sql.Open("mysql", dbCnxString)
@@ -117,6 +146,67 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if dbConnect {
+
+			var queryConditions string
+			var sqlParam []string
+
+			for i := range filter.Filter {
+				// Try to use parameterized queries
+				//switch strings.ToLower(dbDriver) {
+				//case "postgres":
+				//	mParam = fmt.Sprintf("$%v", i+1)
+				//}
+
+				if len(queryConditions) == 0 {
+					// Try to use parameterized queries
+					//queryConditions = fmt.Sprintf("%s = %s", filter.Filter[i].Field, mParam)
+					//sqlParam = append(sqlParam, filter.Filter[i].Value)
+					queryConditions = fmt.Sprintf("%s = '%s'", filter.Filter[i].Field, filter.Filter[i].Value)
+
+				} else {
+					// Try to use parameterized queries
+					//queryConditions += fmt.Sprintf(
+					//	" %s %s = %s",
+					//	strings.ToLower(filter.Condition),
+					//	filter.Filter[i].Field,
+					//	mParam,
+					//)
+					//sqlParam = append(sqlParam, filter.Filter[i].Value)
+					queryConditions += fmt.Sprintf(
+						" %s %s = '%s'",
+						strings.ToUpper(filter.Condition),
+						filter.Filter[i].Field,
+						filter.Filter[i].Value,
+					)
+				}
+
+				logger.LogMsg(
+					fmt.Sprintf(
+						"Filter on %s on value %s", filter.Filter[i].Field, filter.Filter[i].Value,
+					),
+					"info",
+				)
+			}
+
+			if len(queryConditions) > 0 {
+				if strings.Contains(dbQuery, "WHERE") {
+					dbQuery += " AND " + queryConditions
+				} else {
+					dbQuery += " WHERE " + queryConditions
+				}
+
+			}
+
+			logger.LogMsg(
+				fmt.Sprintf(
+					"DB Query: %s, with params %s", dbQuery, sqlParam,
+				),
+				"info",
+			)
+
+			// Try to use parameterized queries
+			//rows, err := db.Query(dbQuery, sqlParam)
+			//
 			rows, err := db.Query(dbQuery)
 			globalvar.CheckErr(err)
 			logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
