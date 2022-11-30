@@ -21,8 +21,10 @@ type sqlData struct {
 }
 
 type Field struct {
-	Field string `json:"field"`
-	Value string `json:"value"`
+	Field    string   `json:"field"`
+	Criteria string   `json:"criteria"`
+	Value    string   `json:"value"`
+	Values   []string `json:"values"`
 }
 
 type Filter struct {
@@ -161,7 +163,23 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 					// Try to use parameterized queries
 					//queryConditions = fmt.Sprintf("%s = %s", filter.Filter[i].Field, mParam)
 					//sqlParam = append(sqlParam, filter.Filter[i].Value)
-					queryConditions = fmt.Sprintf("%s = '%s'", filter.Filter[i].Field, filter.Filter[i].Value)
+					//queryConditions = fmt.Sprintf("%s = '%s'", filter.Filter[i].Field, filter.Filter[i].Value)
+
+					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
+						value := strings.Join(filter.Filter[i].Values, "','")
+						queryConditions += fmt.Sprintf(
+							"%s IN ('%s')",
+							filter.Filter[i].Field,
+							value,
+						)
+					} else {
+						queryConditions += fmt.Sprintf(
+							"%s %s '%s'",
+							filter.Filter[i].Field,
+							filter.Filter[i].Criteria,
+							filter.Filter[i].Value,
+						)
+					}
 
 				} else {
 					// Try to use parameterized queries
@@ -172,12 +190,23 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 					//	mParam,
 					//)
 					//sqlParam = append(sqlParam, filter.Filter[i].Value)
-					queryConditions += fmt.Sprintf(
-						" %s %s = '%s'",
-						strings.ToUpper(filter.Condition),
-						filter.Filter[i].Field,
-						filter.Filter[i].Value,
-					)
+					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
+						value := strings.Join(filter.Filter[i].Values, "','")
+						queryConditions += fmt.Sprintf(
+							" %s %s IN ('%s')",
+							strings.ToUpper(filter.Condition),
+							filter.Filter[i].Field,
+							value,
+						)
+					} else {
+						queryConditions += fmt.Sprintf(
+							" %s %s %s '%s'",
+							strings.ToUpper(filter.Condition),
+							filter.Filter[i].Field,
+							strings.ToUpper(filter.Filter[i].Criteria),
+							filter.Filter[i].Value,
+						)
+					}
 				}
 
 				logger.LogMsg(
@@ -194,7 +223,6 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 				} else {
 					dbQuery += " WHERE " + queryConditions
 				}
-
 			}
 
 			logger.LogMsg(
