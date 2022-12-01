@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -27,9 +28,16 @@ type Field struct {
 	Values   []string `json:"values"`
 }
 
+type Order struct {
+	Field string `json:"field"`
+	Order string `json:"order"`
+}
+
 type Filter struct {
 	Condition string  `json:"condition"`
 	Filter    []Field `json:"filter"`
+	Order     []Order `json:"order"`
+	Limit     int     `json:"limit"`
 }
 
 type Fil struct {
@@ -161,71 +169,28 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 
 				switch strings.ToLower(dbDriver) {
 				case "postgres":
-					//mParam = fmt.Sprintf("$%v", i+1)
 					for j := range filter.Filter[i].Values {
 						if mParam == "" {
 							mParam = fmt.Sprintf("$%v", j+1)
 						} else {
 							mParam += fmt.Sprintf(", $%v", j+1)
 						}
-						//sqlParam = append(sqlParam, filter.Filter[i].Values[j])
 					}
-					//mParam = strings.Join(strings.Split(strings.Repeat("$", len(filter.Filter[i].Values)), ""), ", ")
 				case "mysql":
 					mParam = strings.Join(strings.Split(strings.Repeat("?", len(filter.Filter[i].Values)), ""), ", ")
-					//for j := range filter.Filter[i].Values {
-					//	if mParam == "" {
-					//		mParam = fmt.Sprintf("?", j+1)
-					//	} else {
-					//		mParam += fmt.Sprintf(", $%v", j+1)
-					//	}
-					//	//sqlParam = append(sqlParam, filter.Filter[i].Values[j])
-					//}
 				}
 
 				// If it's first condition
 				if len(queryConditions) == 0 {
-					// Try to use parameterized queries
-					//queryConditions = fmt.Sprintf("%s = %s", filter.Filter[i].Field, mParam)
-					//sqlParam = append(sqlParam, filter.Filter[i].Value)
-					//queryConditions = fmt.Sprintf("%s = '%s'", filter.Filter[i].Field, filter.Filter[i].Value)
 
+					// Try to use parameterized queries
 					sqlParam = make([]any, 0, len(filter.Filter[i].Values))
-					//if len(filter.Filter[i].Values) == 0 {
-					//	sqlParam
-					//} else {
-					//	for j := range filter.Filter[i].Values {
-					//		sqlParam = append(sqlParam, filter.Filter[i].Values[j])
-					//	}
-					//}
 
 					for j := range filter.Filter[i].Values {
 						sqlParam = append(sqlParam, filter.Filter[i].Values[j])
 					}
-					//for val :=
-					//sqlParam = append(sqlParam, filter.Filter[i].Values)
-
-					/*
-						// Works on a standard query
-						if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
-							value := strings.Join(filter.Filter[i].Values, "','")
-							queryConditions += fmt.Sprintf(
-								"%s IN ('%s')",
-								filter.Filter[i].Field,
-								value,
-							)
-						} else {
-							queryConditions += fmt.Sprintf(
-								"%s %s '%s'",
-								filter.Filter[i].Field,
-								filter.Filter[i].Criteria,
-								filter.Filter[i].Value,
-							)
-						}
-					*/
 
 					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
-						//value := strings.Join(filter.Filter[i].Values, "','")
 						queryConditions += fmt.Sprintf(
 							"%s IN (%s)",
 							filter.Filter[i].Field,
@@ -241,33 +206,29 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 					}
 
 				} else {
-					// from here there is more than 1 filter
 
-					// Try to use parameterized queries
-					//queryConditions += fmt.Sprintf(
-					//	" %s %s = %s",
-					//	strings.ToLower(filter.Condition),
-					//	filter.Filter[i].Field,
-					//	mParam,
-					//)
-					//sqlParam = append(sqlParam, filter.Filter[i].Value)
+					sqlParam = make([]any, 0, len(filter.Filter[i].Values))
+					for j := range filter.Filter[i].Values {
+						sqlParam = append(sqlParam, filter.Filter[i].Values[j])
+					}
+
 					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
-						value := strings.Join(filter.Filter[i].Values, "','")
 						queryConditions += fmt.Sprintf(
-							" %s %s IN ('%s')",
+							" %s %s IN (%s)",
 							strings.ToUpper(filter.Condition),
 							filter.Filter[i].Field,
-							value,
+							mParam,
 						)
 					} else {
 						queryConditions += fmt.Sprintf(
-							" %s %s %s '%s'",
+							" %s %s %s %s",
 							strings.ToUpper(filter.Condition),
 							filter.Filter[i].Field,
-							strings.ToUpper(filter.Filter[i].Criteria),
-							filter.Filter[i].Value,
+							filter.Filter[i].Criteria,
+							mParam,
 						)
 					}
+
 				}
 
 				logger.LogMsg(
@@ -293,28 +254,30 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 				"info",
 			)
 
-			// Try to use parameterized queries
+			if len(filter.Order) > 0 {
+				dbQueryOrder := ""
+				//var re = regexp.MustCompile("\W+")
+				for i := range filter.Order {
+					name, _ := regexp.MatchString(`^(\W+)$`, filter.Order[i].Field)
+					order, _ := regexp.MatchString(`^(ASC|DESC)$`, strings.ToUpper(filter.Order[i].Order))
+					if name && order {
+						dbQueryOrder += fmt.Sprintf(" %s %s", filter.Order[i].Field, filter.Order[i].Order)
+					}
+
+					//dbQuery += " %"
+				}
+				if len(dbQueryOrder) > 0 {
+					dbQuery += fmt.Sprintf(" ORDER BY %s", dbQueryOrder)
+				}
+			}
+
+			if filter.Limit > 0 {
+				dbQuery += fmt.Sprintf(" LIMIT %v", filter.Limit)
+			}
+
 			logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
 
 			rows, err := db.Query(dbQuery, sqlParam...)
-			//
-			//rows, err := db.Query(dbQuery)
-
-			//var age []string
-			//var age []interface{}
-			//age := make([]any, 0, 3)
-			//var ages
-			//age = append(age, "RNaseP")
-			//age = append(age, "U1")
-			//age = append(age, "banana")
-			//age = append(age, "orange")
-			//age = append(age, "apple")
-			//age = append(age, "banana")
-			//ages := ages[0:len(age)]
-			//ages := age[:]
-
-			//rows, err := db.Query("SELECT * FROM clan WHERE id IN (?,?,?) LIMIT 10", age...)
-			//rows, err := db.Query("SELECT * FROM fruits WHERE name IN ($1,$2,$3) LIMIT 10", age...)
 
 			globalvar.CheckErr(err)
 
