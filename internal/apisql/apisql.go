@@ -12,12 +12,36 @@ import (
 	"github.com/spf13/viper"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
 type sqlData struct {
 	ReturnedRows int64         `json:"ReturnedRows"`
 	Data         []interface{} `json:"Data"`
+}
+
+type Field struct {
+	Field    string   `json:"field"`
+	Criteria string   `json:"criteria"`
+	Value    string   `json:"value"`
+	Values   []string `json:"values"`
+}
+
+type Order struct {
+	Field string `json:"field"`
+	Order string `json:"order"`
+}
+
+type Filter struct {
+	Condition string  `json:"condition"`
+	Filter    []Field `json:"filter"`
+	Order     []Order `json:"order"`
+	Limit     int     `json:"limit"`
+}
+
+type Fil struct {
+	Name string `json:"name"`
 }
 
 func CreateApiSql(apiName string) {
@@ -30,12 +54,26 @@ func CreateApiSql(apiName string) {
 		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
 	}
 
+	if apiMethod == "post" {
+		globalvar.PostR.HandleFunc(apiName, querySql)
+		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
+	}
+
 }
 
 func querySql(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	apiName := r.URL
 	logger.LogMsg(fmt.Sprintf("Call %s", apiName), "info")
+
+	decoder := json.NewDecoder(r.Body)
+	var filter Filter
+	// Try to use parameterized queries
+	var mParam string
+	err := decoder.Decode(&filter)
+	if err != nil {
+		panic(err)
+	}
 
 	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
 
@@ -61,10 +99,12 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 			globalvar.CheckErr(err)
 			logger.LogMsg(fmt.Sprintf("Open sqlite db %s", dbName), "info")
 			dbConnect = true
+
 		case "mysql":
 			dbCnxString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", dbUsername, dbPassword, dbHost, dbPort, dbName)
 			db, err = sql.Open("mysql", dbCnxString)
 			globalvar.CheckErr(err)
+			mParam = "?"
 
 			if err != nil {
 				logger.LogMsg(fmt.Sprintf("Can't open mysql db %s", dbName), "info")
@@ -117,9 +157,129 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if dbConnect {
-			rows, err := db.Query(dbQuery)
-			globalvar.CheckErr(err)
+
+			var queryConditions string
+			//var sqlParam []string
+			var sqlParam []any
+
+			for i := range filter.Filter {
+				// Try to use parameterized queries
+
+				mParam = ""
+
+				switch strings.ToLower(dbDriver) {
+				case "postgres":
+					for j := range filter.Filter[i].Values {
+						if mParam == "" {
+							mParam = fmt.Sprintf("$%v", j+1)
+						} else {
+							mParam += fmt.Sprintf(", $%v", j+1)
+						}
+					}
+				case "mysql":
+					mParam = strings.Join(strings.Split(strings.Repeat("?", len(filter.Filter[i].Values)), ""), ", ")
+				}
+
+				// If it's first condition
+				if len(queryConditions) == 0 {
+
+					// Try to use parameterized queries
+					sqlParam = make([]any, 0, len(filter.Filter[i].Values))
+
+					for j := range filter.Filter[i].Values {
+						sqlParam = append(sqlParam, filter.Filter[i].Values[j])
+					}
+
+					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
+						queryConditions += fmt.Sprintf(
+							"%s IN (%s)",
+							filter.Filter[i].Field,
+							mParam,
+						)
+					} else {
+						queryConditions += fmt.Sprintf(
+							"%s %s %s",
+							filter.Filter[i].Field,
+							filter.Filter[i].Criteria,
+							mParam,
+						)
+					}
+
+				} else {
+
+					sqlParam = make([]any, 0, len(filter.Filter[i].Values))
+					for j := range filter.Filter[i].Values {
+						sqlParam = append(sqlParam, filter.Filter[i].Values[j])
+					}
+
+					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
+						queryConditions += fmt.Sprintf(
+							" %s %s IN (%s)",
+							strings.ToUpper(filter.Condition),
+							filter.Filter[i].Field,
+							mParam,
+						)
+					} else {
+						queryConditions += fmt.Sprintf(
+							" %s %s %s %s",
+							strings.ToUpper(filter.Condition),
+							filter.Filter[i].Field,
+							filter.Filter[i].Criteria,
+							mParam,
+						)
+					}
+
+				}
+
+				logger.LogMsg(
+					fmt.Sprintf(
+						"Filter on %s on value %s", filter.Filter[i].Field, filter.Filter[i].Value,
+					),
+					"info",
+				)
+			}
+
+			if len(queryConditions) > 0 {
+				if strings.Contains(dbQuery, "WHERE") {
+					dbQuery += " AND " + queryConditions
+				} else {
+					dbQuery += " WHERE " + queryConditions
+				}
+			}
+
+			logger.LogMsg(
+				fmt.Sprintf(
+					"DB Query: %s, with params %s", dbQuery, sqlParam,
+				),
+				"info",
+			)
+
+			if len(filter.Order) > 0 {
+				dbQueryOrder := ""
+				//var re = regexp.MustCompile("\W+")
+				for i := range filter.Order {
+					name, _ := regexp.MatchString(`^(\W+)$`, filter.Order[i].Field)
+					order, _ := regexp.MatchString(`^(ASC|DESC)$`, strings.ToUpper(filter.Order[i].Order))
+					if name && order {
+						dbQueryOrder += fmt.Sprintf(" %s %s", filter.Order[i].Field, filter.Order[i].Order)
+					}
+
+					//dbQuery += " %"
+				}
+				if len(dbQueryOrder) > 0 {
+					dbQuery += fmt.Sprintf(" ORDER BY %s", dbQueryOrder)
+				}
+			}
+
+			if filter.Limit > 0 {
+				dbQuery += fmt.Sprintf(" LIMIT %v", filter.Limit)
+			}
+
 			logger.LogMsg(fmt.Sprintf("execute query : %s", dbQuery), "info")
+
+			rows, err := db.Query(dbQuery, sqlParam...)
+
+			globalvar.CheckErr(err)
 
 			columnTypes, err := rows.ColumnTypes()
 			globalvar.CheckErr(err)

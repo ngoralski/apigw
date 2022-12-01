@@ -9,6 +9,7 @@ import (
 
 var Sm = mux.NewRouter()
 var GetR = Sm.Methods(http.MethodGet).Subrouter()
+var PostR = Sm.Methods(http.MethodPost).Subrouter()
 
 func CheckErr(err error) {
 	if err != nil {
