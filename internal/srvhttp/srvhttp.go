@@ -5,6 +5,7 @@ import (
 	"apigw/internal/apisql"
 	"apigw/internal/globalvar"
 	"apigw/internal/logger"
+	"apigw/internal/snmptrap"
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
@@ -25,6 +26,8 @@ func createEndpoints() {
 			apisql.CreateApiSql(apiDescriptor)
 		case "api":
 			apiapi.CreateApiApi(apiDescriptor)
+		case "snmptrap":
+			snmptrap.CreateApiSnmpTrap(apiDescriptor)
 		default:
 			logger.LogMsg(fmt.Sprintf("Sorry type : %s is not implemented", apiType), "warning")
 		}
