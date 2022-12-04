@@ -1,0 +1,60 @@
+###
+### Basic sub api call
+GET http://localhost:8081/cat
+
+###
+### Basic call for fruits (sql query)
+GET http://localhost:8081/fruits
+
+###
+### Basic call for fruits (sql query with filter)
+GET http://localhost:8081/fruits
+Content-Type: application/json
+
+{
+  "condition": "AND",
+  "filter": [
+    {
+      "field": "type",
+      "criteria": "=",
+      "values": ["pomme"]
+    },
+    {
+      "field": "color",
+      "criteria": "IN",
+      "values": ["vert", "rouge"]
+    }
+  ],
+
+  "order": [
+    {
+      "field": "name",
+      "order": "ASC"
+    }
+  ],
+  "limit": 10
+}
+
+###
+GET http://localhost:8081/fam
+Content-Type: application/json
+
+{
+  "condition": "AND",
+  "filter": [
+    {
+      "field": "id",
+      "criteria": "IN",
+      "values": ["RNaseP", "SCARNA3"]
+    }
+  ],
+  "order": [
+    {
+      "field": "name",
+      "order": "asc"
+    }
+  ],
+  "limit": 10
+}
+
+
