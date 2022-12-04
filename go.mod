@@ -6,6 +6,7 @@ require (
 	github.com/apex/log v1.9.0
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-sql-driver/mysql v1.6.0
+	github.com/golang/gddo v0.0.0-20210115222349-20d68f94ee1f
 	github.com/gorilla/mux v1.8.0
 	github.com/lib/pq v1.10.7
 	github.com/mattn/go-sqlite3 v1.14.16
