@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/golang/gddo/httputil/header"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/viper"
@@ -62,17 +63,27 @@ func CreateApiSql(apiName string) {
 }
 
 func querySql(w http.ResponseWriter, r *http.Request) {
+
+	var mParam string
+	var filter Filter
+
 	w.Header().Set("Content-Type", "application/json")
 	apiName := r.URL
 	logger.LogMsg(fmt.Sprintf("Call %s", apiName), "info")
 
-	decoder := json.NewDecoder(r.Body)
-	var filter Filter
-	// Try to use parameterized queries
-	var mParam string
-	err := decoder.Decode(&filter)
-	if err != nil {
-		panic(err)
+	logger.LogMsg(fmt.Sprintf("Header : %s", r.Header.Get("Content-Type")), "info")
+
+	if r.Header.Get("Content-Type") != "" {
+		value, _ := header.ParseValueAndParams(r.Header, "Content-Type")
+		if value != "application/json" {
+			msg := "Content-Type header is not application/json"
+			http.Error(w, msg, http.StatusUnsupportedMediaType)
+			return
+		}
+		decoder := json.NewDecoder(r.Body)
+		// Try to use parameterized queries
+		err := decoder.Decode(&filter)
+		globalvar.CheckErr(err)
 	}
 
 	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
@@ -92,6 +103,7 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 		var rowCount int64
 		var dbConnect bool
 		var endResponse *strings.Reader
+		var cntParam int
 
 		switch strings.ToLower(dbDriver) {
 		case "sqlite":
@@ -124,6 +136,7 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 			dbCnxString := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", dbUsername, dbPassword, dbHost, dbPort, dbName)
 			db, err = sql.Open("postgres", dbCnxString)
 			globalvar.CheckErr(err)
+			cntParam = 0
 
 			if err != nil {
 				logger.LogMsg(fmt.Sprintf("Can't open postgres db %s", dbName), "info")
@@ -162,81 +175,89 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 			//var sqlParam []string
 			var sqlParam []any
 
-			for i := range filter.Filter {
-				// Try to use parameterized queries
+			if len(filter.Filter) > 0 {
 
-				mParam = ""
-
-				switch strings.ToLower(dbDriver) {
-				case "postgres":
-					for j := range filter.Filter[i].Values {
-						if mParam == "" {
-							mParam = fmt.Sprintf("$%v", j+1)
-						} else {
-							mParam += fmt.Sprintf(", $%v", j+1)
-						}
-					}
-				case "mysql":
-					mParam = strings.Join(strings.Split(strings.Repeat("?", len(filter.Filter[i].Values)), ""), ", ")
+				var cntFilter int
+				for i := range filter.Filter {
+					cntFilter = cntFilter + len(filter.Filter[i].Values)
 				}
+				sqlParam = make([]any, 0, cntFilter)
 
-				// If it's first condition
-				if len(queryConditions) == 0 {
-
+				for i := range filter.Filter {
 					// Try to use parameterized queries
-					sqlParam = make([]any, 0, len(filter.Filter[i].Values))
 
-					for j := range filter.Filter[i].Values {
-						sqlParam = append(sqlParam, filter.Filter[i].Values[j])
+					mParam = ""
+
+					switch strings.ToLower(dbDriver) {
+					case "postgres":
+						for _ = range filter.Filter[i].Values {
+							cntParam++
+							if mParam == "" {
+								mParam = fmt.Sprintf("$%v", cntParam)
+							} else {
+								mParam += fmt.Sprintf(", $%v", cntParam)
+							}
+						}
+					case "mysql":
+						mParam = strings.Join(strings.Split(strings.Repeat("?", len(filter.Filter[i].Values)), ""), ", ")
 					}
 
-					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
-						queryConditions += fmt.Sprintf(
-							"%s IN (%s)",
-							filter.Filter[i].Field,
-							mParam,
-						)
+					// If it's first condition
+					if len(queryConditions) == 0 {
+
+						for j := range filter.Filter[i].Values {
+							sqlParam = append(sqlParam, filter.Filter[i].Values[j])
+						}
+
+						if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
+							queryConditions += fmt.Sprintf(
+								"%s IN (%s)",
+								filter.Filter[i].Field,
+								mParam,
+							)
+						} else {
+							queryConditions += fmt.Sprintf(
+								"%s %s %s",
+								filter.Filter[i].Field,
+								filter.Filter[i].Criteria,
+								mParam,
+							)
+						}
+
 					} else {
-						queryConditions += fmt.Sprintf(
-							"%s %s %s",
-							filter.Filter[i].Field,
-							filter.Filter[i].Criteria,
-							mParam,
-						)
+
+						//sqlParam = make([]any, 0, len(filter.Filter[i].Values))
+						for j := range filter.Filter[i].Values {
+							sqlParam = append(sqlParam, filter.Filter[i].Values[j])
+						}
+
+						if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
+							queryConditions += fmt.Sprintf(
+								" %s %s IN (%s)",
+								strings.ToUpper(filter.Condition),
+								filter.Filter[i].Field,
+								mParam,
+							)
+						} else {
+							queryConditions += fmt.Sprintf(
+								" %s %s %s %s",
+								strings.ToUpper(filter.Condition),
+								filter.Filter[i].Field,
+								filter.Filter[i].Criteria,
+								mParam,
+							)
+						}
+
 					}
 
-				} else {
-
-					sqlParam = make([]any, 0, len(filter.Filter[i].Values))
-					for j := range filter.Filter[i].Values {
-						sqlParam = append(sqlParam, filter.Filter[i].Values[j])
-					}
-
-					if strings.ToUpper(filter.Filter[i].Criteria) == "IN" {
-						queryConditions += fmt.Sprintf(
-							" %s %s IN (%s)",
-							strings.ToUpper(filter.Condition),
-							filter.Filter[i].Field,
-							mParam,
-						)
-					} else {
-						queryConditions += fmt.Sprintf(
-							" %s %s %s %s",
-							strings.ToUpper(filter.Condition),
-							filter.Filter[i].Field,
-							filter.Filter[i].Criteria,
-							mParam,
-						)
-					}
-
+					logger.LogMsg(
+						fmt.Sprintf(
+							"Filter on %s on value %s", filter.Filter[i].Field, filter.Filter[i].Value,
+						),
+						"info",
+					)
 				}
 
-				logger.LogMsg(
-					fmt.Sprintf(
-						"Filter on %s on value %s", filter.Filter[i].Field, filter.Filter[i].Value,
-					),
-					"info",
-				)
 			}
 
 			if len(queryConditions) > 0 {
