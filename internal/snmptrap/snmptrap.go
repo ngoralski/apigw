@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"io"
 	"net/http"
+	"strings"
 )
 
 var snmpOverride bool
@@ -48,6 +49,8 @@ type SnmpMessage struct {
 }
 
 type SnmpTarget struct {
+	// Define the ip of the snmp trap destination
+	// in: ipv4,ipv6
 	Ip           string `json:"ip"`
 	Port         int    `json:"port"`
 	Community    string `json:"community"`
@@ -59,6 +62,9 @@ type SnmpTarget struct {
 }
 
 type PostData struct {
+	// Enable the help for the api call
+	// in: bool
+	Help   bool            `json:"help"`
 	Source SnmpSource      `json:"source"`
 	Target SnmpTarget      `json:"target"`
 	Data   []TrapDataLight `json:"msgdata"`
@@ -128,6 +134,16 @@ func checkOverride(apiName any, varName string, key string, postValue any) any {
 	}
 }
 
+// sendTrap godoc
+//	@Summary		Send a snmp trap via api call with predefined or posted values
+//	@Description	Send a snmp trap
+//	@Tags			snmptrap
+//	@Accept			json
+//	@Produce		json
+//	@Param			message	body		PostData	true	"snmptrap form"
+//	@Success		200		{object}	string		"Trap Sent"
+//	@Failure		400		{object}	string		"Error processing Data"
+//	@Router			/generic/snmptrap [get]
 func sendTrap(w http.ResponseWriter, r *http.Request) {
 
 	//var snmptrap SnmpData
@@ -161,23 +177,15 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 		snmpOverride = viper.GetBool(fmt.Sprintf("api.%s.override", apiName))
 		snmpSource := checkOverride(apiName, "source", "ip", postdata.Source.Ip)
 		snmpTarget := checkOverride(apiName, "target", "ip", postdata.Target.Ip)
-		//gosnmp.Default.Port = checkOverride(apiName, "target", "port", postdata.Target.Port).(uint16)
+		//gosnmp.Default.Port = checkOverride(apiName, "target", "ip", postdata.Target.Port).()
+		gosnmp.Default.Port = checkOverride(apiName, "target", "port", postdata.Target.Port).(uint16)
 		gosnmp.Default.Community = checkOverride(apiName, "target", "community", postdata.Target.Community).(string)
-		snmpUser := checkOverride(apiName, "target", "user", postdata.Target.User)
-		snmpPass := checkOverride(apiName, "target", "pass", postdata.Target.Pass)
+		//snmpUser := checkOverride(apiName, "target", "user", postdata.Target.User)
+		//snmpPass := checkOverride(apiName, "target", "pass", postdata.Target.Pass)
 		snmpVersion := checkOverride(apiName, "target", "type", postdata.Target.Version)
 		snmpRootOID := checkOverride(apiName, "target", "rootoid", postdata.Target.Rootoid)
-		snmpSpecificTrap := checkOverride(apiName, "target", "specific_trap", postdata.Target.Specifictrap)
+		snmpSpecificTrap := checkOverride(apiName, "target", "specific_trap", postdata.Target.Specifictrap).(int)
 		//snmpData := checkOverride(apiName, "data", "values", postdata.Data).(ar)
-
-		logger.LogMsg(
-			fmt.Sprintf(
-				"Will make this trap on call : %v, %s, %s, %s, %s, %s, %v, %s, %v",
-				snmpOverride, snmpSource, snmpTarget, gosnmp.Default.Community, snmpUser,
-				snmpPass, snmpVersion, snmpRootOID, snmpSpecificTrap,
-			),
-			"info",
-		)
 
 		if net.IsIPAddr(snmpTarget.(string)) || net.IsFQDN(snmpTarget.(string)) {
 			gosnmp.Default.Target = snmpTarget.(string)
@@ -206,8 +214,6 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 		if len(rtnMessage.Data) > 0 {
 			returnMsg(w, rtnMessage)
 		} else {
-
-			gosnmp.Default.Port = 162
 
 			switch snmpVersion {
 			case "3":
@@ -300,13 +306,22 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 				Enterprise:   snmpRootOID.(string),
 				AgentAddress: snmpSource.(string),
 				GenericTrap:  0,
-				SpecificTrap: 0,
+				SpecificTrap: snmpSpecificTrap,
 				Timestamp:    300,
 			}
 			_, err = gosnmp.Default.SendTrap(trap)
 			globalvar.CheckErr(err)
 
 		}
+
+	} else {
+
+		endResponse := strings.NewReader(
+			fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}\n", apiName),
+		)
+		_, err := io.Copy(w, endResponse)
+		globalvar.CheckErr(err)
+		logger.LogMsg(fmt.Sprintf("Sorry the call %s was undefined", apiName), "info")
 
 	}
 

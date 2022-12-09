@@ -10,6 +10,14 @@ import (
 	"os"
 )
 
+//	@title			API GW documentation
+//	@version		1.0
+//	@description	This is a small documentation about API GW documentation
+//	@termsOfService	http://swagger.io/terms/
+
+//	@host		localhost:8080
+//	@BasePath	/
+
 var softVersion = "0.3.1"
 
 func main() {

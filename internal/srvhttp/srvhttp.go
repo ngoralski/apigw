@@ -1,6 +1,7 @@
 package srvhttp
 
 import (
+	_ "apigw/docs"
 	"apigw/internal/apiapi"
 	"apigw/internal/apisql"
 	"apigw/internal/globalvar"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"net/http"
 )
 
@@ -33,6 +35,8 @@ func createEndpoints() {
 		}
 
 	}
+	globalvar.Sm.PathPrefix("/documentation/").Handler(httpSwagger.WrapHandler)
+
 }
 
 func HandleRequests() {
