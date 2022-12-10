@@ -17,8 +17,10 @@ import (
 	"strings"
 )
 
-type sqlData struct {
+type jsonMessage struct {
 	ReturnedRows int64         `json:"ReturnedRows"`
+	Status       string        `json:"Status"`
+	Message      string        `json:"Message"`
 	Data         []interface{} `json:"Data"`
 }
 
@@ -66,6 +68,7 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 
 	var mParam string
 	var filter Filter
+	var jsonMessage jsonMessage
 
 	w.Header().Set("Content-Type", "application/json")
 	apiName := r.URL
@@ -99,7 +102,6 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 
 		var db *sql.DB
 		var err error
-		var sqlData sqlData
 		var rowCount int64
 		var dbConnect bool
 		var endResponse *strings.Reader
@@ -364,15 +366,16 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 					masterData[v.Name()] = scanArgs[i]
 				}
 
-				sqlData.Data = append(sqlData.Data, masterData)
+				jsonMessage.Data = append(jsonMessage.Data, masterData)
 				rowCount += 1
 			}
 
 			logger.LogMsg(fmt.Sprintf("found : %d records", rowCount), "info")
-			sqlData.ReturnedRows = rowCount
+			jsonMessage.ReturnedRows = rowCount
+			jsonMessage.Status = "ok"
 
 			globalvar.CheckErr(rows.Close())
-			globalvar.CheckErr(json.NewEncoder(w).Encode(sqlData))
+			globalvar.CheckErr(json.NewEncoder(w).Encode(jsonMessage))
 			globalvar.CheckErr(db.Close())
 
 		} else {
@@ -384,11 +387,15 @@ func querySql(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 
-		endResponse := strings.NewReader(
-			fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}\n", apiName),
-		)
-		_, err := io.Copy(w, endResponse)
-		globalvar.CheckErr(err)
+		jsonMessage.Message = fmt.Sprintf("{\"error\" : \"Sorry the call %s was undefined\"}\n", apiName)
+		jsonMessage.Status = "error"
+		globalvar.CheckErr(json.NewEncoder(w).Encode(jsonMessage))
+
+		//endResponse := strings.NewReader(
+		//
+		//)
+		//_, err := io.Copy(w, endResponse)
+		//globalvar.CheckErr(err)
 		logger.LogMsg(fmt.Sprintf("Sorry the call %s was undefined", apiName), "info")
 
 	}

@@ -44,8 +44,9 @@ type BodyMessage struct {
 	value string
 }
 
-type SnmpMessage struct {
-	Values []BodyMessage
+type jsonMessage struct {
+	Status  string        `json:"status"`
+	Message []interface{} `json:"message"`
 }
 
 type SnmpTarget struct {
@@ -75,17 +76,17 @@ type TrapDataLight struct {
 	Value any    `json:"value"`
 }
 
-type returnMessage struct {
-	Data []interface{} `json:"Data"`
-}
+//type returnMessage struct {
+//	Data []interface{} `json:"Data"`
+//}
 
 type pduData struct {
 	Data []gosnmp.SnmpPDU
 }
 
-func returnMsg(w io.Writer, rtnMessage returnMessage) {
-	globalvar.CheckErr(json.NewEncoder(w).Encode(rtnMessage))
-}
+//func returnMsg(w io.Writer, rtnMessage returnMessage) {
+//	globalvar.CheckErr(json.NewEncoder(w).Encode(rtnMessage))
+//}
 
 func CreateApiSnmpTrap(apiName string) {
 	logger.LogMsg(fmt.Sprintf("Requested api endpoint : %s", apiName), "info")
@@ -246,7 +247,8 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 	//var snmptrap SnmpData
 	var postdata PostData
 	var errMessage string
-	var rtnMessage returnMessage
+	//var rtnMessage returnMessage
+	var jsonMessage jsonMessage
 	//var snmpMessage []SnmpMessage{}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -293,8 +295,8 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 		if net.IsIPAddr(snmpTarget) || net.IsFQDN(snmpTarget) {
 			gosnmp.Default.Target = snmpTarget
 		} else {
-			errMessage = fmt.Sprintf("Sorry your target host value (%s)is not correct", snmpTarget)
-			rtnMessage.Data = append(rtnMessage.Data, errMessage)
+			errMessage = fmt.Sprintf("Sorry your target host value (%s) is not correct", snmpTarget)
+			jsonMessage.Message = append(jsonMessage.Message, errMessage)
 			logger.LogMsg(errMessage, "info")
 		}
 
@@ -304,13 +306,16 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 				snmpSource,
 			)
 			//errMessage = fmt.Sprintf("Sorry your Source host value (%s) is not correct", snmpSource.(string))
-			rtnMessage.Data = append(rtnMessage.Data, errMessage)
+			jsonMessage.Message = append(jsonMessage.Message, errMessage)
 			logger.LogMsg(errMessage, "info")
 		}
 
 		// If no error were discovered during processing posted data we can send the trap
-		if len(rtnMessage.Data) > 0 {
-			returnMsg(w, rtnMessage)
+		if len(jsonMessage.Message) > 0 {
+			jsonMessage.Status = "error"
+			globalvar.CheckErr(json.NewEncoder(w).Encode(jsonMessage))
+
+			//returnMsg(w, rtnMessage)
 		} else {
 
 			switch snmpVersion {
@@ -413,89 +418,17 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 			_, err = gosnmp.Default.SendTrap(trap)
 			globalvar.CheckErr(err)
 
-			//if !snmpOverride {
-			//
-			//	if !viper.GetBool(fmt.Sprintf("api.%s.data.override", apiName)) {
-			//		var defaultSnmpData []map[string]interface{}
-			//		err = viper.UnmarshalKey(fmt.Sprintf("api.%s.data.values", apiName), &defaultSnmpData)
-			//		if err != nil {
-			//			fmt.Printf("err: %v\n", err)
-			//		}
-			//
-			//		for _, contents := range defaultSnmpData {
-			//
-			//			vType := gosnmp.Integer
-			//			vContent := contents["value"]
-			//			logger.LogMsg(fmt.Sprintf("Append new OID %s : %s", contents["oid"].(string), vContent), "info")
-			//
-			//			switch contents["value"].(type) {
-			//			//case float64:
-			//			//	vType = gosnmp.Integer
-			//			//	vContent = int(contents["value"].(float64))
-			//			case string:
-			//				vType = gosnmp.OctetString
-			//				vContent = contents["value"].(string)
-			//			default:
-			//				vType = gosnmp.Integer
-			//				vContent = int(contents["value"].(float64))
-			//			}
-			//
-			//			pdus.Data = append(
-			//				pdus.Data,
-			//				gosnmp.SnmpPDU{
-			//					Name:  contents["oid"].(string),
-			//					Type:  vType,
-			//					Value: vContent,
-			//				},
-			//			)
-			//
-			//		}
-			//
-			//	} else {
-			//
-			//		for idx := range postdata.Data {
-			//			logger.LogMsg(
-			//				fmt.Sprintf(
-			//					"DBG : Data : ##%v##", postdata.Data[idx].Oid,
-			//				),
-			//				"info",
-			//			)
-			//
-			//			vType := gosnmp.Integer
-			//			vContent := postdata.Data[idx].Value
-			//			switch postdata.Data[idx].Value.(type) {
-			//			case string:
-			//				vType = gosnmp.OctetString
-			//				vContent = postdata.Data[idx].Value.(string)
-			//			default:
-			//				vType = gosnmp.Integer
-			//				vContent = int(postdata.Data[idx].Value.(float64))
-			//			}
-			//
-			//			pdus.Data = append(
-			//				pdus.Data,
-			//				gosnmp.SnmpPDU{
-			//					Name:  postdata.Data[idx].Oid,
-			//					Type:  vType,
-			//					Value: vContent,
-			//				},
-			//			)
-			//		}
-			//
-			//	}
-			//
-			//	trap := gosnmp.SnmpTrap{
-			//		Variables:    pdus.Data,
-			//		Enterprise:   snmpRootOID,
-			//		AgentAddress: snmpSource,
-			//		GenericTrap:  0,
-			//		SpecificTrap: snmpSpecificTrap,
-			//		Timestamp:    300,
-			//	}
-			//	_, err = gosnmp.Default.SendTrap(trap)
-			//	globalvar.CheckErr(err)
-			//
-			//}
+			if err == nil {
+				jsonMessage.Status = "ok"
+				jsonMessage.Message = append(jsonMessage.Message, "your snmptrap was submitted")
+				globalvar.CheckErr(json.NewEncoder(w).Encode(jsonMessage))
+				//
+				//endResponse := strings.NewReader(
+				//	fmt.Sprintf("{\"message\" : \"your snmptrap was submitted\"}\n"),
+				//)
+				//_, err := io.Copy(w, endResponse)
+				globalvar.CheckErr(err)
+			}
 
 		}
 
