@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -52,7 +53,7 @@ type SnmpTarget struct {
 	// Define the ip of the snmp trap destination
 	// in: ipv4,ipv6
 	Ip           string `json:"ip"`
-	Port         int    `json:"port"`
+	Port         uint16 `json:"port"`
 	Community    string `json:"community"`
 	User         string `json:"user"`
 	Pass         string `json:"pass"`
@@ -178,13 +179,15 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 		snmpSource := checkOverride(apiName, "source", "ip", postdata.Source.Ip)
 		snmpTarget := checkOverride(apiName, "target", "ip", postdata.Target.Ip)
 		//gosnmp.Default.Port = checkOverride(apiName, "target", "ip", postdata.Target.Port).()
-		gosnmp.Default.Port = checkOverride(apiName, "target", "port", postdata.Target.Port).(uint16)
+		targetPort, _ := strconv.ParseUint(checkOverride(apiName, "target", "port", postdata.Target.Port).(string), 16, 16)
+		gosnmp.Default.Port = uint16(targetPort)
 		gosnmp.Default.Community = checkOverride(apiName, "target", "community", postdata.Target.Community).(string)
 		//snmpUser := checkOverride(apiName, "target", "user", postdata.Target.User)
 		//snmpPass := checkOverride(apiName, "target", "pass", postdata.Target.Pass)
 		snmpVersion := checkOverride(apiName, "target", "type", postdata.Target.Version)
 		snmpRootOID := checkOverride(apiName, "target", "rootoid", postdata.Target.Rootoid)
-		snmpSpecificTrap := checkOverride(apiName, "target", "specific_trap", postdata.Target.Specifictrap).(int)
+		specificTrap, _ := strconv.ParseInt(checkOverride(apiName, "target", "specific_trap", postdata.Target.Specifictrap).(string), 0, 16)
+		snmpSpecificTrap := int(specificTrap)
 		//snmpData := checkOverride(apiName, "data", "values", postdata.Data).(ar)
 
 		if net.IsIPAddr(snmpTarget.(string)) || net.IsFQDN(snmpTarget.(string)) {
