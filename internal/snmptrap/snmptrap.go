@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/viper"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -57,7 +56,7 @@ type SnmpTarget struct {
 	Community    string `json:"community"`
 	User         string `json:"user"`
 	Pass         string `json:"pass"`
-	Version      int    `json:"version"`
+	Version      string `json:"version"`
 	Rootoid      string `json:"rootoid"`
 	Specifictrap int    `json:"specific_trap"`
 }
@@ -105,8 +104,20 @@ func CreateApiSnmpTrap(apiName string) {
 
 }
 
-//func checkOverride(apiName any, varName string, postValue string) string {
-func checkOverride(apiName any, varName string, key string, postValue any) any {
+func checkOverrideUint16(apiName any, varName string, key string, postValue uint16) uint16 {
+	if postValue == 0 {
+		logger.LogMsg(
+			fmt.Sprintf(
+				"PostValue for %s.%s is nil, use config value '%s'",
+				varName,
+				key,
+				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
+			),
+			"debug",
+		)
+		return viper.GetUint16(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key))
+	}
+
 	if snmpOverride {
 		logger.LogMsg(
 			fmt.Sprintf(
@@ -115,7 +126,7 @@ func checkOverride(apiName any, varName string, key string, postValue any) any {
 				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
 				postValue,
 			),
-			"info",
+			"debug",
 		)
 		return postValue
 	} else if viper.GetBool(fmt.Sprintf("api.%s.%s.override", apiName, varName)) {
@@ -126,11 +137,96 @@ func checkOverride(apiName any, varName string, key string, postValue any) any {
 				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
 				postValue,
 			),
-			"info",
+			"debug",
 		)
 		return postValue
 	} else {
 		//logger.LogMsg(fmt.Sprintf("%s is not supposed to be overridden, keep default value", varName), "info")
+		return viper.GetUint16(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key))
+	}
+}
+
+func checkOverrideInt(apiName any, varName string, key string, postValue int) int {
+	if postValue == 0 {
+		logger.LogMsg(
+			fmt.Sprintf(
+				"PostValue for %s.%s is nil, use config value '%s'",
+				varName,
+				key,
+				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
+			),
+			"debug",
+		)
+		return viper.GetInt(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key))
+	}
+
+	if snmpOverride {
+		logger.LogMsg(
+			fmt.Sprintf(
+				"%s can be overridden, change from '%s' to '%v'",
+				varName,
+				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
+				postValue,
+			),
+			"debug",
+		)
+		return postValue
+	} else if viper.GetBool(fmt.Sprintf("api.%s.%s.override", apiName, varName)) {
+		logger.LogMsg(
+			fmt.Sprintf(
+				"%s can be overridden, change from '%s' to '%v'",
+				varName,
+				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
+				postValue,
+			),
+			"debug",
+		)
+		return postValue
+	} else {
+		//logger.LogMsg(fmt.Sprintf("%s is not supposed to be overridden, keep default value", varName), "info")
+		return viper.GetInt(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key))
+	}
+}
+
+//func checkOverride(apiName any, varName string, postValue string) string {
+func checkOverrideString(apiName any, varName string, key string, postValue string) string {
+
+	if postValue == "" {
+		logger.LogMsg(
+			fmt.Sprintf(
+				"PostValue for %s.%s is nil, use config value '%s'",
+				varName,
+				key,
+				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
+			),
+			"debug",
+		)
+		return viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key))
+	}
+
+	if snmpOverride {
+		logger.LogMsg(
+			fmt.Sprintf(
+				"%s can be overridden, change from '%s' to '%v'",
+				varName,
+				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
+				postValue,
+			),
+			"debug",
+		)
+		return postValue
+	} else if viper.GetBool(fmt.Sprintf("api.%s.%s.override", apiName, varName)) {
+		logger.LogMsg(
+			fmt.Sprintf(
+				"%s can be overridden, change from '%s' to '%v'",
+				varName,
+				viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key)),
+				postValue,
+			),
+			"debug",
+		)
+		return postValue
+	} else {
 		return viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, varName, key))
 	}
 }
@@ -172,41 +268,40 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 		globalvar.CheckErr(err)
 	}
 
+	// TODO
+	// Check if posted json format / value match expectation (string is string, int is int..)
+
 	if viper.IsSet(fmt.Sprintf("api.%s", apiName)) {
 
 		// If in config definition it's possible to override parameter take them into account.
 		snmpOverride = viper.GetBool(fmt.Sprintf("api.%s.override", apiName))
-		snmpSource := checkOverride(apiName, "source", "ip", postdata.Source.Ip)
-		snmpTarget := checkOverride(apiName, "target", "ip", postdata.Target.Ip)
-		//gosnmp.Default.Port = checkOverride(apiName, "target", "ip", postdata.Target.Port).()
-		targetPort, _ := strconv.ParseUint(checkOverride(apiName, "target", "port", postdata.Target.Port).(string), 16, 16)
-		gosnmp.Default.Port = uint16(targetPort)
-		gosnmp.Default.Community = checkOverride(apiName, "target", "community", postdata.Target.Community).(string)
+		snmpSource := checkOverrideString(apiName, "source", "ip", postdata.Source.Ip)
+		snmpTarget := checkOverrideString(apiName, "target", "ip", postdata.Target.Ip)
+
+		//if postdata.Target.Port nil || postdata.Target.Port == "" || postdata.Target.Port == 0 {
+		//	postdata.Target.Port = viper.GetString(fmt.Sprintf("api.%s.%s.%s", apiName, "target", "port"))
+		//}
+
+		gosnmp.Default.Port = checkOverrideUint16(apiName, "target", "port", postdata.Target.Port)
+		gosnmp.Default.Community = checkOverrideString(apiName, "target", "community", postdata.Target.Community)
 		//snmpUser := checkOverride(apiName, "target", "user", postdata.Target.User)
 		//snmpPass := checkOverride(apiName, "target", "pass", postdata.Target.Pass)
-		snmpVersion := checkOverride(apiName, "target", "type", postdata.Target.Version)
-		snmpRootOID := checkOverride(apiName, "target", "rootoid", postdata.Target.Rootoid)
-		specificTrap, _ := strconv.ParseInt(checkOverride(apiName, "target", "specific_trap", postdata.Target.Specifictrap).(string), 0, 16)
-		snmpSpecificTrap := int(specificTrap)
-		//snmpData := checkOverride(apiName, "data", "values", postdata.Data).(ar)
+		snmpVersion := checkOverrideString(apiName, "target", "type", postdata.Target.Version)
+		snmpRootOID := checkOverrideString(apiName, "target", "rootoid", postdata.Target.Rootoid)
+		snmpSpecificTrap := checkOverrideInt(apiName, "target", "specific_trap", postdata.Target.Specifictrap)
 
-		if net.IsIPAddr(snmpTarget.(string)) || net.IsFQDN(snmpTarget.(string)) {
-			gosnmp.Default.Target = snmpTarget.(string)
+		if net.IsIPAddr(snmpTarget) || net.IsFQDN(snmpTarget) {
+			gosnmp.Default.Target = snmpTarget
 		} else {
-			errMessage = fmt.Sprintf("Sorry your target host value (%s)is not correct", snmpTarget.(string))
+			errMessage = fmt.Sprintf("Sorry your target host value (%s)is not correct", snmpTarget)
 			rtnMessage.Data = append(rtnMessage.Data, errMessage)
 			logger.LogMsg(errMessage, "info")
 		}
 
-		/*
-			It seems that we can't define a different ip source for snmptrap in this lib
-		*/
-
-		//if !net.IsIPAddr(snmpSource.(string)) || !net.IsFQDN(snmpSource.(string)) {
-		if !net.IsIPAddr(snmpSource.(string)) {
+		if !net.IsIPAddr(snmpSource) {
 			errMessage = fmt.Sprintf(
 				"Sorry your Source host value (%s) is not correct",
-				snmpSource.(string),
+				snmpSource,
 			)
 			//errMessage = fmt.Sprintf("Sorry your Source host value (%s) is not correct", snmpSource.(string))
 			rtnMessage.Data = append(rtnMessage.Data, errMessage)
@@ -233,87 +328,174 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 
 			var pdus pduData
 
-			if !snmpOverride {
+			//
+			// TODO
+			// Actually get global override.
+			//
 
-				if !viper.GetBool(fmt.Sprintf("api.%s.data.override", apiName)) {
-					var defaultSnmpData []map[string]interface{}
-					err = viper.UnmarshalKey(fmt.Sprintf("api.%s.data.values", apiName), &defaultSnmpData)
-					if err != nil {
-						fmt.Printf("err: %v\n", err)
+			if !viper.GetBool(fmt.Sprintf("api.%s.data.override", apiName)) {
+				var defaultSnmpData []map[string]interface{}
+				err = viper.UnmarshalKey(fmt.Sprintf("api.%s.data.values", apiName), &defaultSnmpData)
+				if err != nil {
+					fmt.Printf("err: %v\n", err)
+				}
+
+				for _, contents := range defaultSnmpData {
+
+					vType := gosnmp.Integer
+					vContent := contents["value"]
+					logger.LogMsg(fmt.Sprintf("Append new OID %s : %s", contents["oid"].(string), vContent), "debug")
+
+					switch contents["value"].(type) {
+					//case float64:
+					//	vType = gosnmp.Integer
+					//	vContent = int(contents["value"].(float64))
+					case string:
+						vType = gosnmp.OctetString
+						vContent = contents["value"].(string)
+					default:
+						vType = gosnmp.Integer
+						vContent = int(contents["value"].(float64))
 					}
 
-					for _, contents := range defaultSnmpData {
+					pdus.Data = append(
+						pdus.Data,
+						gosnmp.SnmpPDU{
+							Name:  contents["oid"].(string),
+							Type:  vType,
+							Value: vContent,
+						},
+					)
 
-						vType := gosnmp.Integer
-						vContent := contents["value"]
-						switch contents["value"].(type) {
-						//case float64:
-						//	vType = gosnmp.Integer
-						//	vContent = int(contents["value"].(float64))
-						case string:
-							vType = gosnmp.OctetString
-							vContent = contents["value"].(string)
-						default:
-							vType = gosnmp.Integer
-							vContent = int(contents["value"].(float64))
-						}
+				}
 
-						pdus.Data = append(
-							pdus.Data,
-							gosnmp.SnmpPDU{
-								Name:  contents["oid"].(string),
-								Type:  vType,
-								Value: vContent,
-							},
-						)
+			} else {
 
+				for idx := range postdata.Data {
+					logger.LogMsg(
+						fmt.Sprintf(
+							"DBG : Data : ##%v##", postdata.Data[idx].Oid,
+						),
+						"info",
+					)
+
+					vType := gosnmp.Integer
+					vContent := postdata.Data[idx].Value
+					switch postdata.Data[idx].Value.(type) {
+					case string:
+						vType = gosnmp.OctetString
+						vContent = postdata.Data[idx].Value.(string)
+					default:
+						vType = gosnmp.Integer
+						vContent = int(postdata.Data[idx].Value.(float64))
 					}
 
-				} else {
-
-					for idx := range postdata.Data {
-						logger.LogMsg(
-							fmt.Sprintf(
-								"DBG : Data : ##%v##", postdata.Data[idx].Oid,
-							),
-							"info",
-						)
-
-						vType := gosnmp.Integer
-						vContent := postdata.Data[idx].Value
-						switch postdata.Data[idx].Value.(type) {
-						case string:
-							vType = gosnmp.OctetString
-							vContent = postdata.Data[idx].Value.(string)
-						default:
-							vType = gosnmp.Integer
-							vContent = int(postdata.Data[idx].Value.(float64))
-						}
-
-						pdus.Data = append(
-							pdus.Data,
-							gosnmp.SnmpPDU{
-								Name:  postdata.Data[idx].Oid,
-								Type:  vType,
-								Value: vContent,
-							},
-						)
-					}
-
+					pdus.Data = append(
+						pdus.Data,
+						gosnmp.SnmpPDU{
+							Name:  postdata.Data[idx].Oid,
+							Type:  vType,
+							Value: vContent,
+						},
+					)
 				}
 
 			}
 
 			trap := gosnmp.SnmpTrap{
 				Variables:    pdus.Data,
-				Enterprise:   snmpRootOID.(string),
-				AgentAddress: snmpSource.(string),
+				Enterprise:   snmpRootOID,
+				AgentAddress: snmpSource,
 				GenericTrap:  0,
 				SpecificTrap: snmpSpecificTrap,
 				Timestamp:    300,
 			}
 			_, err = gosnmp.Default.SendTrap(trap)
 			globalvar.CheckErr(err)
+
+			//if !snmpOverride {
+			//
+			//	if !viper.GetBool(fmt.Sprintf("api.%s.data.override", apiName)) {
+			//		var defaultSnmpData []map[string]interface{}
+			//		err = viper.UnmarshalKey(fmt.Sprintf("api.%s.data.values", apiName), &defaultSnmpData)
+			//		if err != nil {
+			//			fmt.Printf("err: %v\n", err)
+			//		}
+			//
+			//		for _, contents := range defaultSnmpData {
+			//
+			//			vType := gosnmp.Integer
+			//			vContent := contents["value"]
+			//			logger.LogMsg(fmt.Sprintf("Append new OID %s : %s", contents["oid"].(string), vContent), "info")
+			//
+			//			switch contents["value"].(type) {
+			//			//case float64:
+			//			//	vType = gosnmp.Integer
+			//			//	vContent = int(contents["value"].(float64))
+			//			case string:
+			//				vType = gosnmp.OctetString
+			//				vContent = contents["value"].(string)
+			//			default:
+			//				vType = gosnmp.Integer
+			//				vContent = int(contents["value"].(float64))
+			//			}
+			//
+			//			pdus.Data = append(
+			//				pdus.Data,
+			//				gosnmp.SnmpPDU{
+			//					Name:  contents["oid"].(string),
+			//					Type:  vType,
+			//					Value: vContent,
+			//				},
+			//			)
+			//
+			//		}
+			//
+			//	} else {
+			//
+			//		for idx := range postdata.Data {
+			//			logger.LogMsg(
+			//				fmt.Sprintf(
+			//					"DBG : Data : ##%v##", postdata.Data[idx].Oid,
+			//				),
+			//				"info",
+			//			)
+			//
+			//			vType := gosnmp.Integer
+			//			vContent := postdata.Data[idx].Value
+			//			switch postdata.Data[idx].Value.(type) {
+			//			case string:
+			//				vType = gosnmp.OctetString
+			//				vContent = postdata.Data[idx].Value.(string)
+			//			default:
+			//				vType = gosnmp.Integer
+			//				vContent = int(postdata.Data[idx].Value.(float64))
+			//			}
+			//
+			//			pdus.Data = append(
+			//				pdus.Data,
+			//				gosnmp.SnmpPDU{
+			//					Name:  postdata.Data[idx].Oid,
+			//					Type:  vType,
+			//					Value: vContent,
+			//				},
+			//			)
+			//		}
+			//
+			//	}
+			//
+			//	trap := gosnmp.SnmpTrap{
+			//		Variables:    pdus.Data,
+			//		Enterprise:   snmpRootOID,
+			//		AgentAddress: snmpSource,
+			//		GenericTrap:  0,
+			//		SpecificTrap: snmpSpecificTrap,
+			//		Timestamp:    300,
+			//	}
+			//	_, err = gosnmp.Default.SendTrap(trap)
+			//	globalvar.CheckErr(err)
+			//
+			//}
 
 		}
 
