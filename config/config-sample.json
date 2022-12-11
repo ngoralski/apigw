@@ -4,6 +4,20 @@
   "log_output": "stdout",
   "listening_port": 8081,
 
+
+  "auth_sources" : {
+    "ldap1":{
+      "enabled": false,
+      "method": "ldap",
+      "basedn": "dc=example,dc=com",
+      "binddn": "cn=read-only-admin,dc=example,dc=com",
+      "port": "389",
+      "host": "myserver",
+      "bindpassword": "password",
+      "filter": "(uid=%s)"
+    }
+  },
+
   "sources": {
     "gorm": {
       "dbname": "gorm.db",
@@ -27,7 +41,10 @@
       "type": "api",
       "source": "catfact",
       "method": "get",
-      "target_method": "get"
+      "target_method": "get",
+      "restricted": true,
+      "auth_source": "ldap1",
+      "allowed_users": ["myuser"]
     },
     "/users": {
       "type": "sql",
