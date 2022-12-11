@@ -37,6 +37,9 @@ Content-Type: application/json
 
 ###
 GET http://localhost:8081/fam
+
+###
+GET http://localhost:8081/fam
 Content-Type: application/json
 
 {
@@ -57,4 +60,39 @@ Content-Type: application/json
   "limit": 10
 }
 
+###
+### Send a predifined trap
+GET http://localhost:8081/snmptrap
 
+
+
+###
+### Send a trap with new parameters
+GET http://localhost:8081/snmptrap
+Content-Type: application/json
+
+{
+  "source": {
+    "ip": "127.0.0.1"
+  },
+  "toto": "toto",
+  "target": {
+    "ip": "127.0.0.1",
+    "community": "p2blic",
+    "user": "user2",
+    "pass": "pass2",
+    "version": 1,
+    "rootoid": ".1.3.6.1.4.1.3854.2",
+    "specific_trap": 44
+  },
+  "msgdata": [
+    {
+      "oid": ".1.3.5.6.4",
+      "value": "ab2"
+    },
+    {
+      "oid": ".1.3.5.6.66",
+      "value": 46
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"apigw/internal/globalvar"
 	_ "apigw/internal/globalvar"
 	"apigw/internal/logger"
 	"apigw/internal/srvhttp"
@@ -9,6 +10,14 @@ import (
 	"github.com/spf13/viper"
 	"os"
 )
+
+//	@title			API GW documentation
+//	@version		1.0
+//	@description	This is a small documentation about API GW documentation
+//	@termsOfService	http://swagger.io/terms/
+
+//	@host		localhost:8080
+//	@BasePath	/
 
 var softVersion = "0.3.1"
 
@@ -43,8 +52,16 @@ func main() {
 	}
 	logger.InitLog()
 
+	globalvar.SetupGoGuardian()
+
+	//threads := int(viper.Get("threads").(float64))
 	logger.LogMsg("Starting process", "info")
 	logger.LogMsg("Read configfile config.json", "info")
+
+	//alarm := make(chan struct{})
+	//for i := 0; i < threads; i++ {
+	//	go srvhttp.HandleRequests()
+	//}
 
 	srvhttp.HandleRequests()
 

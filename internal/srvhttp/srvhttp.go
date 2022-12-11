@@ -1,13 +1,16 @@
 package srvhttp
 
 import (
+	_ "apigw/docs"
 	"apigw/internal/apiapi"
 	"apigw/internal/apisql"
 	"apigw/internal/globalvar"
 	"apigw/internal/logger"
+	"apigw/internal/snmptrap"
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"net/http"
 )
 
@@ -25,11 +28,15 @@ func createEndpoints() {
 			apisql.CreateApiSql(apiDescriptor)
 		case "api":
 			apiapi.CreateApiApi(apiDescriptor)
+		case "snmptrap":
+			snmptrap.CreateApiSnmpTrap(apiDescriptor)
 		default:
 			logger.LogMsg(fmt.Sprintf("Sorry type : %s is not implemented", apiType), "warning")
 		}
 
 	}
+	globalvar.Sm.PathPrefix("/documentation/").Handler(httpSwagger.WrapHandler)
+
 }
 
 func HandleRequests() {

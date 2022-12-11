@@ -29,7 +29,13 @@ func CreateApiApi(apiName string) {
 	apiMethod := viper.GetString(fmt.Sprintf("api.%s.method", apiName))
 
 	if apiMethod == "get" {
-		globalvar.GetR.HandleFunc(apiName, queryApi)
+		//globalvar.GetR.HandleFunc(apiName, queryApi)
+		globalvar.Sm.HandleFunc(apiName, globalvar.Middleware(http.HandlerFunc(queryApi))).Methods("GET")
+		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
+	}
+
+	if apiMethod == "post" {
+		globalvar.Sm.HandleFunc(apiName, globalvar.Middleware(http.HandlerFunc(queryApi))).Methods("POST")
 		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
 	}
 
