@@ -17,31 +17,8 @@ import (
 var snmpOverride bool
 var apiName any
 
-type SnmpData struct {
-	Version      int
-	community    string
-	user         string
-	pass         string
-	ipFrom       string
-	oid          string
-	specificTrap int
-	trapType     int
-	trapData     []TrapData
-}
-
-type TrapData struct {
-	Oid      string `json:"oid"`
-	DataType string
-	Value    string `json:"value"`
-}
-
 type SnmpSource struct {
 	Ip string `json:"ip"`
-}
-
-type BodyMessage struct {
-	oid   string
-	value string
 }
 
 type jsonMessage struct {
@@ -52,14 +29,18 @@ type jsonMessage struct {
 type SnmpTarget struct {
 	// Define the ip of the snmp trap destination
 	// in: ipv4,ipv6
-	Ip           string `json:"ip"`
-	Port         uint16 `json:"port"`
-	Community    string `json:"community"`
-	User         string `json:"user"`
-	Pass         string `json:"pass"`
-	Version      string `json:"version"`
-	Rootoid      string `json:"rootoid"`
-	Specifictrap int    `json:"specific_trap"`
+	Ip                string `json:"ip"`
+	Port              uint16 `json:"port"`
+	Community         string `json:"community"`
+	Username          string `json:"username"`
+	EngineID          string `json:"engine"`
+	AuthProtocol      string `json:"AuthProtocol"`
+	AuthPassphrase    string `json:"AuthPassphrase"`
+	PrivacyProtocol   string `json:"PrivacyProtocol"`
+	PrivacyPassphrase string `json:"PrivacyPassphrase"`
+	Version           string `json:"version"`
+	Rootoid           string `json:"rootoid"`
+	Specifictrap      int    `json:"specific_trap"`
 }
 
 type PostData struct {
@@ -76,17 +57,9 @@ type TrapDataLight struct {
 	Value any    `json:"value"`
 }
 
-//type returnMessage struct {
-//	Data []interface{} `json:"Data"`
-//}
-
 type pduData struct {
 	Data []gosnmp.SnmpPDU
 }
-
-//func returnMsg(w io.Writer, rtnMessage returnMessage) {
-//	globalvar.CheckErr(json.NewEncoder(w).Encode(rtnMessage))
-//}
 
 func CreateApiSnmpTrap(apiName string) {
 	logger.LogMsg(fmt.Sprintf("Requested api endpoint : %s", apiName), "info")
@@ -94,12 +67,15 @@ func CreateApiSnmpTrap(apiName string) {
 	apiMethod := viper.GetString(fmt.Sprintf("api.%s.method", apiName))
 
 	if apiMethod == "get" {
-		globalvar.GetR.HandleFunc(apiName, sendTrap)
+		//globalvar.GetR.HandleFunc(apiName, sendTrap)
+		//globalvar.GetR.HandleFunc(apiName, globalvar.Middleware(http.HandlerFunc(sendTrap)))
+		globalvar.Sm.HandleFunc(apiName, globalvar.Middleware(http.HandlerFunc(sendTrap))).Methods("GET")
 		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
 	}
 
 	if apiMethod == "post" {
-		globalvar.PostR.HandleFunc(apiName, sendTrap)
+		//globalvar.PostR.HandleFunc(apiName, sendTrap)
+		globalvar.Sm.HandleFunc(apiName, globalvar.Middleware(http.HandlerFunc(sendTrap))).Methods("POST")
 		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
 	}
 
@@ -189,7 +165,6 @@ func checkOverrideInt(apiName any, varName string, key string, postValue int) in
 	}
 }
 
-//func checkOverride(apiName any, varName string, postValue string) string {
 func checkOverrideString(apiName any, varName string, key string, postValue string) string {
 
 	if postValue == "" {
@@ -244,18 +219,15 @@ func checkOverrideString(apiName any, varName string, key string, postValue stri
 //	@Router			/generic/snmptrap [get]
 func sendTrap(w http.ResponseWriter, r *http.Request) {
 
-	//var snmptrap SnmpData
 	var postdata PostData
 	var errMessage string
-	//var rtnMessage returnMessage
 	var jsonMessage jsonMessage
-	//var snmpMessage []SnmpMessage{}
 
 	w.Header().Set("Content-Type", "application/json")
 	apiName = r.URL
 	logger.LogMsg(fmt.Sprintf("Call %s", apiName), "info")
 
-	logger.LogMsg(fmt.Sprintf("Header : %s", r.Header.Get("Content-Type")), "info")
+	//logger.LogMsg(fmt.Sprintf("Header : %s", r.Header.Get("Content-Type")), "deb")
 
 	if r.Header.Get("Content-Type") != "" {
 		value, _ := header.ParseValueAndParams(r.Header, "Content-Type")
@@ -285,10 +257,55 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 		//}
 
 		gosnmp.Default.Port = checkOverrideUint16(apiName, "target", "port", postdata.Target.Port)
-		gosnmp.Default.Community = checkOverrideString(apiName, "target", "community", postdata.Target.Community)
-		//snmpUser := checkOverride(apiName, "target", "user", postdata.Target.User)
-		//snmpPass := checkOverride(apiName, "target", "pass", postdata.Target.Pass)
-		snmpVersion := checkOverrideString(apiName, "target", "type", postdata.Target.Version)
+
+		snmpUser := checkOverrideString(apiName, "target", "username", postdata.Target.Username)
+		snmpPrivacyPassphrase := checkOverrideString(apiName, "target", "PrivacyPassphrase", postdata.Target.PrivacyPassphrase)
+		snmpAuthPassphrase := checkOverrideString(apiName, "target", "AuthPassphrase", postdata.Target.AuthPassphrase)
+		//SnmpAuthPassphrase := checkOverrideString(apiName, "target", "AuthPassphrase", postdata.Target.AuthPassphrase)
+
+		//SnmpPrivacyPassphrase := checkOverrideString(apiName, "target", "PrivacyPassphrase", postdata.Target.PrivacyPassphrase)
+		//snmpAuthProtocol := checkOverrideString(apiName, "target", "AuthProtocol", postdata.Target.AuthProtocol)
+		//snmpPrivacyProtocol :=
+
+		var snmpAuthProtocol gosnmp.SnmpV3AuthProtocol
+		switch checkOverrideString(apiName, "target", "AuthProtocol", postdata.Target.AuthProtocol) {
+		case "NoAuth":
+			snmpAuthProtocol = gosnmp.NoAuth
+		case "SHA":
+			snmpAuthProtocol = gosnmp.SHA
+		case "SHA224":
+			snmpAuthProtocol = gosnmp.SHA224
+		case "SHA256":
+			snmpAuthProtocol = gosnmp.SHA256
+		case "SHA384":
+			snmpAuthProtocol = gosnmp.SHA384
+		case "SHA512":
+			snmpAuthProtocol = gosnmp.SHA512
+		default:
+			snmpAuthProtocol = gosnmp.MD5
+		}
+
+		var snmpPrivacyProtocol gosnmp.SnmpV3PrivProtocol
+		switch checkOverrideString(apiName, "target", "PrivacyProtocol", postdata.Target.PrivacyProtocol) {
+		case "NoPriv":
+			snmpPrivacyProtocol = gosnmp.NoPriv
+		case "AES":
+			snmpPrivacyProtocol = gosnmp.AES
+		case "AES192":
+			snmpPrivacyProtocol = gosnmp.AES192
+		case "AES256":
+			snmpPrivacyProtocol = gosnmp.AES256
+		case "AES192C":
+			snmpPrivacyProtocol = gosnmp.AES192C
+		case "AES256C":
+			snmpPrivacyProtocol = gosnmp.AES256C
+		default:
+			snmpPrivacyProtocol = gosnmp.DES
+		}
+
+		//snmpAuthPassphrase := checkOverrideString(apiName, "target", "AuthPassphrase", postdata.Target.AuthPassphrase)
+
+		snmpVersion := checkOverrideString(apiName, "target", "Version", postdata.Target.Version)
 		snmpRootOID := checkOverrideString(apiName, "target", "rootoid", postdata.Target.Rootoid)
 		snmpSpecificTrap := checkOverrideInt(apiName, "target", "specific_trap", postdata.Target.Specifictrap)
 
@@ -321,10 +338,23 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 			switch snmpVersion {
 			case "3":
 				gosnmp.Default.Version = gosnmp.Version3
+				gosnmp.Default.SecurityModel = gosnmp.UserSecurityModel
+				gosnmp.Default.MsgFlags = gosnmp.AuthPriv
+				gosnmp.Default.SecurityParameters = &gosnmp.UsmSecurityParameters{
+					UserName:                 snmpUser,
+					AuthoritativeEngineID:    "1234",
+					AuthenticationProtocol:   snmpAuthProtocol,
+					AuthenticationPassphrase: snmpAuthPassphrase,
+					PrivacyProtocol:          snmpPrivacyProtocol,
+					PrivacyPassphrase:        snmpPrivacyPassphrase,
+				}
 			case "2|2c":
 				gosnmp.Default.Version = gosnmp.Version2c
+				gosnmp.Default.Community = checkOverrideString(apiName, "target", "community", postdata.Target.Community)
+
 			default:
 				gosnmp.Default.Version = gosnmp.Version1
+				gosnmp.Default.Community = checkOverrideString(apiName, "target", "community", postdata.Target.Community)
 			}
 
 			err := gosnmp.Default.Connect()
@@ -381,7 +411,7 @@ func sendTrap(w http.ResponseWriter, r *http.Request) {
 						fmt.Sprintf(
 							"DBG : Data : ##%v##", postdata.Data[idx].Oid,
 						),
-						"info",
+						"debug",
 					)
 
 					vType := gosnmp.Integer

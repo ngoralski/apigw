@@ -53,12 +53,15 @@ func CreateApiSql(apiName string) {
 	apiMethod := viper.GetString(fmt.Sprintf("api.%s.method", apiName))
 
 	if apiMethod == "get" {
-		globalvar.GetR.HandleFunc(apiName, querySql)
+		//globalvar.GetR.HandleFunc(apiName, querySql)
+		globalvar.Sm.HandleFunc(apiName, globalvar.Middleware(http.HandlerFunc(querySql))).Methods("GET")
+
 		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
 	}
 
 	if apiMethod == "post" {
-		globalvar.PostR.HandleFunc(apiName, querySql)
+		//globalvar.PostR.HandleFunc(apiName, querySql)
+		globalvar.Sm.HandleFunc(apiName, globalvar.Middleware(http.HandlerFunc(querySql))).Methods("POST")
 		logger.LogMsg(fmt.Sprintf("Created GET api endpoint : %s", apiName), "info")
 	}
 

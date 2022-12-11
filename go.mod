@@ -12,6 +12,7 @@ require (
 	github.com/gosnmp/gosnmp v1.35.0
 	github.com/lib/pq v1.10.7
 	github.com/mattn/go-sqlite3 v1.14.16
+	github.com/shaj13/go-guardian v1.5.11
 	github.com/spf13/viper v1.13.0
 	github.com/swaggo/http-swagger v1.3.3
 	github.com/swaggo/swag v1.8.8
@@ -43,8 +44,10 @@ require (
 	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
+	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
+	gopkg.in/ldap.v3 v3.1.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

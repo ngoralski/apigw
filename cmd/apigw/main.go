@@ -1,6 +1,7 @@
 package main
 
 import (
+	"apigw/internal/globalvar"
 	_ "apigw/internal/globalvar"
 	"apigw/internal/logger"
 	"apigw/internal/srvhttp"
@@ -51,8 +52,16 @@ func main() {
 	}
 	logger.InitLog()
 
+	globalvar.SetupGoGuardian()
+
+	//threads := int(viper.Get("threads").(float64))
 	logger.LogMsg("Starting process", "info")
 	logger.LogMsg("Read configfile config.json", "info")
+
+	//alarm := make(chan struct{})
+	//for i := 0; i < threads; i++ {
+	//	go srvhttp.HandleRequests()
+	//}
 
 	srvhttp.HandleRequests()
 
